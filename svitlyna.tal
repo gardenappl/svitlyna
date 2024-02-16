@@ -1,157 +1,132 @@
 |00 @System [ &vector $2 &expansion $2 &wst $1 &rst $1 &metadata $2 &r $2 &g $2 &b $2 &debug $1 &state $1 ]
 |10 @Console [ &vector $2 &read $1 &pad $4 &type $1 &write $1 &error $1 ]
 |20 @Screen [ &vector $2 &width $2 &height $2 &auto $1 &pad $1 &x $2 &y $2 &addr $2 &pixel $1 &sprite $1 ]
-|80 @Controller [ &vector $2 &button $1 &key $1 ]
 
-|0070
-@magic $2 @x $2 @y $2 @width $2 @height $2
+|70 
+@width $2 @height $2 @x $2 @y $2
+
+|a0 @File [ &vector $2 &success $2 &stat $2 &delete $1 &append $1 &name $2 &length $2 &read $2 &write $2 ]
 
 |0100
-	;on-console .Console/vector DEO2
-
-	BRK
-
-
-@on-console ( -> )
-	.Console/type DEI #01 SUB ?fail
-	.Console/read DEI LIT "f NEQ ?fail
-	LIT "f .Console/write DEO
-	;on-magic-farbfeld .Console/vector DEO2
-
-	BRK
-
-
-@on-magic-farbfeld ( -> )
-	.magic LDZ2 INC2
-	DUP2 .magic STZ2
-
-	;farbfeld-magic ADD2 LDA DUP
-	,&next JCN
-	,&end JMP
-
-	&next
-		.Console/read DEI 
-		DUP .Console/write DEO
-		NEQ ?fail
-		BRK
-	&end
-		#0000 .magic STZ2
-		#0a .Console/write DEO
-		;on-size-farbfeld .Console/vector DEO2
-		BRK
-
-
-@on-size-farbfeld ( -> )
-	( don't support images bigger than 65536x65536 )
-	.magic LDZ2 INC2
-	DUP2 .magic STZ2
-	DUP2 #0002 EQU2 ?&read-width1
-	DUP2 #0003 EQU2 ?&read-width2
-	DUP2 #0006 EQU2 ?&read-height1
-	DUP2 #0007 EQU2 ?&read-height2
-	.Console/read DEI ?fail
-	BRK
-	&read-width1
-		.Console/read DEI .width STZ
-		BRK
-	&read-width2
-		.Console/read DEI .width #01 ADD STZ
-		BRK
-	&read-height1
-		.Console/read DEI .height STZ
-		BRK
-	&read-height2
-		.Console/read DEI .height #01 ADD STZ
-		!farbfeld-decode
-
-
-@on-screen ( -> )
-	LIT "f .Console/write DEO
-	BRK
-
-
-@farbfeld-decode ( -> )
-	;on-screen .Screen/vector DEO2
-
-	.width LDZ2 print-hex
-	#0a .Console/write DEO
-	.height LDZ2 print-hex
+	#beef print-short
 	#0a .Console/write DEO
 
-	.width LDZ2 .Screen/width DEO2
-	.height LDZ2 .Screen/height DEO2
-	#0860 .System/r DEO2
-	#0100 .System/g DEO2
-	#0920 .System/b DEO2
-	( #01 .Screen/auto DEO )
-	#0000 .magic STZ2
-	;on-pixel-farbfeld .Console/vector DEO2
-	BRK
-
-
-@on-pixel-farbfeld ( -- )
-	.Console/read DEI print-hex LIT "? .Console/write DEO
-	.Console/type DEI ?&cont
-	!end
-&cont   .magic LDZ2 INC2
-	DUP2 .magic STZ2
-	DUP2 #0008 EQU2 ?&reset
-	#0001 NEQ2 ?&skip
-
-	.Console/read DEI
-	DUP #7d EQU ?&color1
-	DUP #5d EQU ?&color2
-	&color0 
-		LIT "A .Console/write DEO
-		( #01 .Screen/pixel DEO )
-		!&drawn
-	&color1 
-		LIT "B .Console/write DEO
-		#01 .Screen/pixel DEO
-		!&drawn
-	&color2
-		LIT "C .Console/write DEO
-		#02 .Screen/pixel DEO
-	&drawn
-		( LIT "- .Console/write DEO )
-		.x LDZ2 INC2 
-		( DUP2 #0030 ADD2 NIP .Console/write DEO )
-		( #20 .Console/write DEO )
-		DUP2 .Screen/x DEO2
-		DUP2 .x STZ2 
-		.width LDZ2 EQU2 ?&line-end
-		BRK
-	&line-end
-		#0a .Console/write DEO
-		.y LDZ2 INC2 
-		DUP2 .Screen/y DEO2 
-		.y STZ2
-		#0000 .x STZ2
-		#0000 .Screen/x STZ2
-		BRK
-	&reset
-		POP2
-		#0000 .magic STZ2
-	&skip	BRK
-
-
-@farbfeld-magic "farbfeld 00
-
-( https://wiki.xxiivv.com/site/uxntal_library.html )
-@print-hex ( short* -- )
-	SWP print-hex/b
-	&b ( -- )
-		DUP #04 SFT print-hex/c
-	&c ( -- )
-		#0f AND DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD #18 DEO
-		JMP2r
-
-
-@fail ( -> )
-	#01 .System/debug DEO
+	( if we exit prematurely, status code will be failure )
 	#01 .System/state DEO
+	;filename .File/name DEO2
+	( #0001 .File/length DEO2 )
+	#00ff .File/length DEO2
+	;buffer .File/read DEO2
+	
+	next-file-byte
+	DUP .Console/write DEO
+	LIT "f EQU ?{ !bad-file }
 
+	#0000
+@verify-farbfeld-magic
+	INC2k SWP2 ;farbfeld-magic ADD2 LDA DUP ?{ !ff-size }
+	next-file-byte 
+	DUP .Console/write DEO
+	EQU ?{ !bad-file }
+	!verify-farbfeld-magic
+
+@ff-size
+	( discard high bytes, support max 65536x65536 )
+	next-file-byte ;too-large JCN
+	next-file-byte ;too-large JCN
+	next-file-byte next-file-byte .width STZ2
+	next-file-byte ;too-large JCN
+	next-file-byte ;too-large JCN
+	next-file-byte next-file-byte .height STZ2
+
+	.width LDZ2 print-short
+	#0a .Console/write DEO
+	.height LDZ2 print-short
+	#0a .Console/write DEO
+	!end
+( @quant1
+	.x LDZ2 INC2
+	DUP2 .width LDZ2 NEQ2 ?{ POP2 #00 .y LDZ2 INC2 .height LDZ2 EQU2 ;end JCN2 }
+	.x STZ2
+	next-rgb
+	DUP ,minb1 LDR GTH ?{ DUP ,minb1 STR }
+	DUP ,maxb1 LDR LTH ?{ DUP ,maxb1 STR } POP
+
+	DUP ,ming1 LDR GTH ?{ DUP ,ming1 STR }
+	DUP ,maxg1 LDR LTH ?{ DUP ,maxg1 STR } POP
+
+	DUP ,minr1 LDR GTH ?{ DUP ,minr1 STR }
+	DUP ,maxr1 LDR LTH ?{ DUP ,maxr1 STR } POP
+	!quant1
+
+	( used for median cut color quantization )
+	@minr1 #ff @maxr1 #00 
+	@ming1 #ff @maxg1 #00 
+	@minb1 #ff @maxb1 #00
+	@minr2 #ff @maxr2 #00 
+	@ming2 #ff @maxg2 #00
+	@minb2 #ff @maxb2 #00
+	@mid $2 @midchan $1 )
 
 @end
-	LIT ") .Console/write DEO
+	( success! )
 	#80 .System/state DEO
+	BRK
+
+
+@next-rgb ( -- r g b )
+	( ignore lower 8 bits of precision )
+	next-file-byte next-file-byte POP2
+	next-file-byte next-file-byte POP2
+	next-file-byte next-file-byte POP2
+	( ignore 16-bit alpha )
+	next-file-byte POP2 next-file-byte POP2
+	JMP2r
+
+
+( this works fine, but is probably over-complicated )
+@next-file-byte ( -- x* )
+	LIT2 [ &pointer =buffer ] 
+	INC2k DUP2
+	;buffer/end NEQ2 ?{ ;buffer .File/read DEO2 POP2 ;buffer }
+	,&pointer STR2
+	LDA
+	JMP2r
+( @ next-file-byte ( -- x* )
+	;&pointer .File/read DEO2
+	LIT [ &pointer 00 ]
+	JMP2r )
+	
+
+@farbfeld-magic "arbfeld 00
+@filename "hmm-s.ff 00
+
+( https://wiki.xxiivv.com/site/uxntal_library.html )
+@print-short ( short* -- )
+	SWP print-short/b
+	&b ( -- )
+		DUP #04 SFT print-short/c
+	&c ( -- )
+		#0f AND DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD .Console/write DEO
+		JMP2r
+
+@print-str ( str* -- )
+	&while ( -- )
+		LDAk .Console/write DEO
+		INC2 LDAk ?&while
+	POP2 JMP2r
+	
+
+@bad-file 
+	;&str !fail
+	&str "...Wrong 20 "file 00
+
+@too-large
+	;&str !fail
+	&str "...Too 20 "large 00
+
+@fail ( error-msg* -- )
+	print-str
+	BRK
+	
+@buffer $0100 &end
