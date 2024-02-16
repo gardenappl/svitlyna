@@ -7,99 +7,95 @@
 
 |a0 @File [ &vector $2 &success $2 &stat $2 &delete $1 &append $1 &name $2 &length $2 &read $2 &write $2 ]
 
-|0100
-	#beef print-short
-	#0a .Console/write DEO
+%DEBUG { DUP .Console/write DEO }
 
-	( if we exit prematurely, status code will be failure )
-	#01 .System/state DEO
+|0100
+	pick-color
+	LIT "! .Console/write DEO
+
 	;filename .File/name DEO2
-	( #0001 .File/length DEO2 )
-	#00ff .File/length DEO2
+	#000e .File/length DEO2
 	;buffer .File/read DEO2
-	
-	next-file-byte
-	DUP .Console/write DEO
-	LIT "f EQU ?{ !bad-file }
+	.File/success DEI2 #000e EQU2 ?{ !bad-file }
+
+	;buffer/magic LDA DEBUG DUP LIT "f EQU ?{ !bad-file }
 
 	#0000
-@verify-farbfeld-magic
-	INC2k SWP2 ;farbfeld-magic ADD2 LDA DUP ?{ !ff-size }
-	next-file-byte 
-	DUP .Console/write DEO
-	EQU ?{ !bad-file }
-	!verify-farbfeld-magic
-
+@ff-header
+	INC2 DUP2 DUP2
+	;&magic ADD2 LDA DUP ?{ !ff-size }
+	ROT ROT ;buffer ADD2 LDA DEBUG EQU ?{ !bad-file }
+	!ff-header
+	&magic "farbfeld 00
 @ff-size
-	( discard high bytes, support max 65536x65536 )
-	next-file-byte ;too-large JCN
-	next-file-byte ;too-large JCN
-	next-file-byte next-file-byte .width STZ2
-	next-file-byte ;too-large JCN
-	next-file-byte ;too-large JCN
-	next-file-byte next-file-byte .height STZ2
-
-	.width LDZ2 print-short
-	#0a .Console/write DEO
-	.height LDZ2 print-short
-	#0a .Console/write DEO
-	!end
-( @quant1
-	.x LDZ2 INC2
-	DUP2 .width LDZ2 NEQ2 ?{ POP2 #00 .y LDZ2 INC2 .height LDZ2 EQU2 ;end JCN2 }
-	.x STZ2
-	next-rgb
-	DUP ,minb1 LDR GTH ?{ DUP ,minb1 STR }
-	DUP ,maxb1 LDR LTH ?{ DUP ,maxb1 STR } POP
-
-	DUP ,ming1 LDR GTH ?{ DUP ,ming1 STR }
-	DUP ,maxg1 LDR LTH ?{ DUP ,maxg1 STR } POP
-
-	DUP ,minr1 LDR GTH ?{ DUP ,minr1 STR }
-	DUP ,maxr1 LDR LTH ?{ DUP ,maxr1 STR } POP
-	!quant1
-
-	( used for median cut color quantization )
-	@minr1 #ff @maxr1 #00 
-	@ming1 #ff @maxg1 #00 
-	@minb1 #ff @maxb1 #00
-	@minr2 #ff @maxr2 #00 
-	@ming2 #ff @maxg2 #00
-	@minb2 #ff @maxb2 #00
-	@mid $2 @midchan $1 )
-
+	;buffer/ffwidthhigh LDA2 "0000 EQU2 ?{ !too-large }
+	;buffer/ffwidthlow LDA2 .width STZ2
+	;buffer/ffheighthigh LDA2 "0000 EQU2 ?{ !too-large }
+	#0002 .File/length DEO2 
+	;buffer/ffheightlow .File/read DEO2
+	;buffer/ffheightlow LDA2 .height STZ2
 @end
 	( success! )
-	#80 .System/state DEO
+	.width LDZ2
+	DUP2 print-short
+	#0a .Console/write DEO
+	.Screen/width DEO2
+
+	.height LDZ2 
+	DUP2 print-short
+	#0a .Console/write DEO
+	.Screen/height DEO2
+
 	BRK
 
+@pick-color
+	#0000 ( distance to current color )
+	#00 
+	  #01 ;color/r LDA #00 ;color0/r LDA SUB2 ( 01xx if (r - r0) >= 0, 00xx if (r - r0) < 0 )
+	( in negative case becomes (r0 - r - 1) ) SWP ?{ #ff SWP SUB }
+	                                                           ADD2 ( add to current distance )
+	#0001 ;color/g LDA #00 ;color0/g LDA SUB2 SWP ?{ #ff SWP SUB } ADD2
+	#0001 ;color/b LDA #00 ,color0/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	DEBUG-SHORT-NEWL
+	DUP2 ,color/mindist LDR2 GTH2 ?{ ,color/mindist STR2 #00 ,color/mindistcol STR }
 
-@next-rgb ( -- r g b )
-	( ignore lower 8 bits of precision )
-	next-file-byte next-file-byte POP2
-	next-file-byte next-file-byte POP2
-	next-file-byte next-file-byte POP2
-	( ignore 16-bit alpha )
-	next-file-byte POP2 next-file-byte POP2
+	#0000
+	#0001 ,color/r LDR #00 ,color1/r LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	#0001 ,color/g LDR #00 ,color1/g LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	#0001 ,color/b LDR #00 ,color1/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	DEBUG-SHORT-NEWL
+	DUP2 ,color/mindist LDR2 GTH2 ?{ ,color/mindist STR2 #01 ,color/mindistcol STR }
+	!pick-color2
+
+( hardcoded )
+@color0 [ &r 00 &g 00 &b 00 ]
+@color1 [ &r ff &g 00 &b 00 ]
+@color2 [ &r 00 &g ff &b 00 ]
+@color3 [ &r 00 &g 00 &b ff ]
+
+@color [ &r 00 &g 00 &b 00 &mindist ffff &mindistcol 00 ]
+
+@pick-color2
+	#0000
+	#0001 ,color/r LDR #00 ,color2/r LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	#0001 ,color/g LDR #00 ,color2/g LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	#0001 ,color/b LDR #00 ,color2/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	DEBUG-SHORT-NEWL
+	DUP2 ,color/mindist LDR2 GTH2 ?{ ,color/mindist STR2 #02 ,color/mindistcol STR }
+
+	#0000
+	#0001 ,color/r LDR #00 ,color3/r LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	#0001 ,color/g LDR #00 ;color3/g LDA SUB2 SWP ?{ #ff SWP SUB } ADD2
+	#0001 ;color/b LDA #00 ;color3/b LDA SUB2 SWP ?{ #ff SWP SUB } ADD2
+	DEBUG-SHORT-NEWL
+	DUP2 ;color/mindist LDA2 GTH2 ?{ ;color/mindist STA2 #03 ;color/mindistcol STA }
+
+	;color/mindist LDA2 print-short
+	;color/mindistcol LDA #30 ADD .Console/write DEO
+
 	JMP2r
 
-
-( this works fine, but is probably over-complicated )
-@next-file-byte ( -- x* )
-	LIT2 [ &pointer =buffer ] 
-	INC2k DUP2
-	;buffer/end NEQ2 ?{ ;buffer .File/read DEO2 POP2 ;buffer }
-	,&pointer STR2
-	LDA
-	JMP2r
-( @ next-file-byte ( -- x* )
-	;&pointer .File/read DEO2
-	LIT [ &pointer 00 ]
-	JMP2r )
 	
-
-@farbfeld-magic "arbfeld 00
-@filename "hmm-s.ff 00
 
 ( https://wiki.xxiivv.com/site/uxntal_library.html )
 @print-short ( short* -- )
@@ -115,11 +111,17 @@
 		LDAk .Console/write DEO
 		INC2 LDAk ?&while
 	POP2 JMP2r
+
+@DEBUG-SHORT-NEWL
+	DUP2
+	print-short
+	#0a .Console/write DEO
+	JMP2r
 	
 
 @bad-file 
 	;&str !fail
-	&str "...Wrong 20 "file 00
+	&str "...Bad 20 "file 00
 
 @too-large
 	;&str !fail
@@ -127,6 +129,18 @@
 
 @fail ( error-msg* -- )
 	print-str
+	#01 .System/state DEO
 	BRK
-	
-@buffer $0100 &end
+
+@filename "image.ff 00
+@buffer [
+	&magic                       $4
+	              &qoiwidthhigh  $2
+	              &qoiwidthlow   $2
+	&ffwidthhigh  &qoiheighthigh $2
+	&ffwidthlow   &qoiheightlow  $2
+	&ffheighthigh &qoichan       $1
+	              &qoispace      $1
+	&ffheightlow                 $2
+]
+@imagelines
