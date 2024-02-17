@@ -10,50 +10,57 @@
 	&vector $2 &width $2 &height $2 &auto $1 &pad 
 	$1 &x $2 &y $2 &addr $2 &pixel $1 &sprite $1600
 ]
-
 |a0 @File [ 
 	&vector $2 &success $2 &stat $2 &delete $1 
 	&append $1 &name $2 &length $2 &read $2 &write $2000
 ]
 
 |0000 
-@img-w $2 @img-h $2 @view-x $2 @view-y $2
+@img-w $2 @img-h $2 
+
+( see bottom of file for reasoning )
+%mMAX_W_SMOL { #0300 }
+%mMAX_W_BIG { #3c00 }
+
+@view-x $2 @view-y $2
 
 ( boolean options, could be compressed to bit fields if needed )
 ( dithering requires use of large memory buffers for lines )
 @no-dithering $1
 @no-fullscreen $1
 
-( see bottom of file for calculations )
-%mMAX_W_SMOL { #0300 }
-%mMAX_W_BIG { #3c00 }
-
 @color0 [ &r $1 &g $1 &b $1 ]
 @color1 [ &r $1 &g $1 &b $1 ]
 @color2 [ &r $1 &g $1 &b $1 ]
 @color3 [ &r $1 &g $1 &b $1 ]
 
+
 |0100
-	( hardcoded colors for now )
-	#ffff .color0 STZ2 #ff .color0/b STZ
-	#bbbb .color1 STZ2 #bb .color1/b STZ
-	#6666 .color2 STZ2 #66 .color2/b STZ
-	#0000 .color3 STZ2 #00 .color3/b STZ
-	prepare-palette
+( hardcoded colors for now )
+#ffff .color0 STZ2 #ff .color0/b STZ
+#aaaa .color1 STZ2 #aa .color1/b STZ
+#5555 .color2 STZ2 #55 .color2/b STZ
+#0000 .color3 STZ2 #00 .color3/b STZ
+prepare-palette
 
-	;filename .File/name DEO2
-	#000e .File/length DEO2 ;buffer .File/read DEO2
-	.File/success DEI2 #000e EQU2 ?{ !bad-file }
+;filename .File/name DEO2
+#000e .File/length DEO2 ;buffer .File/read DEO2
+.File/success DEI2 #000e EQU2 ?{ !bad-file }
 
-	;buffer/magic LDA DUP LIT "f EQU ?{ !bad-file }
+;buffer/magic LDA DUP LIT "f EQU ?{ !bad-file }
 
+
+@ff-init
 	#0000
-@ff-header
-	INC2 DUP2 DUP2
-	;&magic ADD2 LDA DUP ?{ !ff-size }
-	ROT ROT ;buffer ADD2 LDA EQU ?{ !bad-file }
-	!ff-header
-	&magic "farbfeld 00
+	&loop
+		INC2 DUP2 DUP2
+		;&magic ADD2 LDA DUP ?{ !ff-size }
+		ROT ROT ;buffer/magic ADD2 LDA EQU ?{ !bad-file }
+	!&loop
+!fail
+	[ &magic "farbfeld 00 ]
+
+
 @ff-size
 	;buffer/ffwidthhigh LDA2 #0000 EQU2 ?{ !too-large }
 	;buffer/ffwidthlow LDA2 DUP2 .img-w STZ2
@@ -62,45 +69,78 @@
 	;buffer/ffheightlow LDA2 DUP2 .img-h STZ2
 
 	handle-image-size
-	
-	#01 .Screen/auto DEO
-	#0008 .File/length DEO2
-
-	;ff-file-print-bunch .Screen/vector DEO2
+	;ff-file-print .Screen/vector DEO2
 BRK
 
 
-@ff-file-print-bunch
-	&loop
-		ff-file-print
-	!&loop
-!fail
+@ff-file-print ( -> )
+	#01 .Screen/auto DEO
+	#0008 .File/length DEO2
+
+	&loop ( -- )
+		( LIT ". .Console/write DEO )
+		;ff-get-next-color/buffer .File/read DEO2
+		ff-get-next-color
+		;color/b STA ;color/g STA ;color/b STA
+		pick-color .Screen/pixel DEO
+		move-print-pos ?&loop
+	
+	&loop-end
+	;str/end print-str 
+	#0000 .Screen/vector DEO2 
+BRK
+
+
+@move-print-pos ( -- continue )
+	.Screen/x DEI2 .img-w LDZ2 EQU2 ?&line-end #01 JMP2r
+
+	&line-end
+		#0000 .Screen/x DEO2 
+		.Screen/y DEI2 INC2 
+		DUP2 .Screen/y DEO2 
+		.img-h LDZ2 NEQ2
+JMP2r
 
 	
 ( farbfeld uses 16-bit depth, not alpha-premultiplied ) 
 ( we discard the lower 12 bits )
-( 4 bit color multiplied with 4 bit alpha to get 8 bits )
-@ff-buffer [ &r $2 &g $2 &b $2 &a $2 ]
-@ff-file-print
-	;ff-buffer .File/read DEO2
-	,ff-buffer/a LDR INC ?{
-		,ff-buffer/r LDR #04 SFT 
-		,ff-buffer/a LDR #04 SFT MUL ;color/r STA
-		,ff-buffer/g LDR #04 SFT 
-		,ff-buffer/a LDR #04 SFT MUL ;color/g STA
-		,ff-buffer/b LDR #04 SFT 
-		,ff-buffer/a LDR #04 SFT MUL ;color/b STA
-		print-pixel
-		JMP2r 
-	}
-	,ff-buffer/r LDR ;color/r STA
-	,ff-buffer/g LDR ;color/g STA
-	,ff-buffer/b LDR ;color/b STA
-	print-pixel
+( use 4 bits directly, if alpha is not present )
+( or, multiply 2 bit color with 2 bit alpha to get 4 bits )
+@ff-get-next-color ( -- r g b )
+	,&a LDR INC ?&trans
+
+	( LIT "# .Console/write DEO )
+	,&r LDR ( #04 SFT )
+	( DUP print-byte  )
+	,&g LDR ( #04 SFT )
+	( DUP print-byte  )
+	,&b LDR ( #04 SFT )
+	( DUP print-byte  )
+	( #0a .Console/write DEO )
+	JMP2r 
+	[ &buffer &r $2 &g $2 &b $2 &a $2 ]
+
+	&trans
+		( LIT "a .Console/write DEO )
+		( LIT "# .Console/write DEO )
+		( ,&r LDR print-byte )
+		( ,&g LDR print-byte )
+		( ,&b LDR print-byte )
+		( LIT "# .Console/write DEO )
+		,&r LDR #06 SFT 
+		,&a LDR #06 SFT MUL
+		( DUP print-byte  )
+		,&g LDR #06 SFT 
+		,&a LDR #06 SFT MUL
+		( DUP print-byte  )
+		,&b LDR #06 SFT 
+		,&a LDR #06 SFT MUL
+		( DUP print-byte  )
+		( #0a .Console/write DEO )
 JMP2r
 
 
-@handle-image-size ( w* h* -- w* h* )
+@handle-image-size
 	DUP2 .Screen/height DEO2
 	DUP2 .Screen/height DEI2 EQU2 ?{
 		#01 .no-fullscreen STZ
@@ -110,7 +150,7 @@ JMP2r
 	DUP2 .Screen/width DEI2 EQU2 ?{
 		#01 .no-fullscreen STZ
 	}
-&fullscreen-check-end
+	&fullscreen-check-end
 	OVR2
 	.no-fullscreen LDZ SUB ?{ !too-large }
 
@@ -136,20 +176,6 @@ JMP2r
 		#ffff LDA LIT "? EQU ?{
 			#01 .no-dithering STZ 
 		}
-	}
-JMP2r
-
-
-( assumes screen auto x, RGB written to ;color )
-@print-pixel
-	pick-color 
-	.Screen/pixel DEO
-	.Screen/x DEI2 
-	.img-w LDZ2
-	NEQ2 ?{ 
-		#0000 .Screen/x DEO2 
-		.Screen/y DEI2 INC2 DUP2 
-		.img-h LDZ2 NEQ2 ?{ !end } .Screen/y DEO2
 	}
 JMP2r
 
@@ -181,7 +207,7 @@ JMP2r
 
 
 ( chooses closest color from palette )
-@pick-color
+@pick-color ( -- c )
 	#00 [ ,color/r LDR ] [ LIT @color0r $1 ] GTHk ?{ SWP } SUB
 	#00 [ ,color/g LDR ] [ LIT @color0g $1 ] GTHk ?{ SWP } SUB ADD2
 	#00 [ ,color/b LDR ] [ LIT @color0b $1 ] GTHk ?{ SWP } SUB ADD2
@@ -198,7 +224,6 @@ JMP2r
 		@color [ 
 			&r 00 &g 00 &b 00 &mindist ffff &mindistcol 00 
 		]
-		@pick-color2
 	}
 	#0000
 	#00 [ ,color/r LDR ] [ LIT @color2r $1 ] GTHk ?{ SWP } SUB
@@ -239,19 +264,14 @@ JMP2r
 	&str "...Too 20 "large 00
 
 
-@fail ( error-msg* -- )
+@fail ( error-msg* -> )
 	print-str
 	#01 .System/state DEO
 BRK
-	
 
-@end
-	;&str print-str #0000 .Screen/vector DEO2 
-BRK
-	&str "Готово! 00
-
-
-@start-str "Hi 20 "there! 00
+@str [
+	&end "Готово! 00
+]
 
 @print-byte ( b -- )
 	DUP #04 SFT DUP #09 GTH #27 MUL 
@@ -261,8 +281,6 @@ BRK
 	ADD [ LIT "0 ] ADD .Console/write DEO
 JMP2r
 
-
-@filename "image.ff 00
 @buffer [
 	&magic                       $4
 	              &qoiwidthhigh  $2
@@ -273,6 +291,9 @@ JMP2r
 	              &qoispace      $1
 	&ffheightlow                 $2 
 ]
+
+
+@filename "image.ff 00
 
 ( smol lines: #0800-#2000, 0x0400 = 1024  bytes per line, 
               1024  * 3 / 4 = 768   pixels )
