@@ -8,29 +8,21 @@
 |a0 @File [ &vector $2 &success $2 &stat $2 &delete $1 &append $1 &name $2 &length $2 &read $2 &write $2 ]
 
 
-( %DEBUG { DUP .Console/write DEO } )
-( %DEBUG-BYTE { DUP print-byte } )
-
-%DEBUG { #00 POP }
-%DEBUG-BYTE { #00 POP }
-
 |0100
 	( hardcoded colors for now )
-	#da73 .System/r DEO2
-	#d753 .System/g DEO2
-	#d644 .System/b DEO2
+	prepare-palette
 
 	;filename .File/name DEO2
 	#000e .File/length DEO2 ;buffer .File/read DEO2
 	.File/success DEI2 #000e EQU2 ?{ !bad-file }
 
-	;buffer/magic LDA DEBUG DUP LIT "f EQU ?{ !bad-file }
+	;buffer/magic LDA DUP LIT "f EQU ?{ !bad-file }
 
 	#0000
 @ff-header
 	INC2 DUP2 DUP2
 	;&magic ADD2 LDA DUP ?{ !ff-size }
-	ROT ROT ;buffer ADD2 LDA DEBUG EQU ?{ !bad-file }
+	ROT ROT ;buffer ADD2 LDA EQU ?{ !bad-file }
 	!ff-header
 	&magic "farbfeld 00
 @ff-size
@@ -76,63 +68,85 @@
 ( assumes screen auto x, RGB written to ;color )
 @print-pixel
 	pick-color 
-	( LIT "! .Console/write DEO DUP #30 ADD .Console/write DEO )
 	.Screen/pixel DEO
 	.Screen/x DEI2 
-	( LIT "x .Console/write DEO DUP2 print-short #0a .Console/write DEO )
 	.width LDZ2
 	NEQ2 ?{ #0000 .Screen/x DEO2 .Screen/y DEI2 INC2 DUP2 .height LDZ2 NEQ2 ?{ !end } .Screen/y DEO2 }
 
 	JMP2r
-	
+
+
+( probably overkill )
+@prepare-palette
+	;color0/r LDA DUP ;color0r STA #f0 AND 
+	;color1/r LDA DUP ;color1r STA #04 SFT ORA ,&rhigh STR
+	;color2/r LDA DUP ;color2r STA #f0 AND 
+	;color3/r LDA DUP ;color3r STA #04 SFT ORA ,&rlow STR
+	;color0/g LDA DUP ;color0g STA #f0 AND 
+	;color1/g LDA DUP ;color1g STA #04 SFT ORA ,&ghigh STR
+	;color2/g LDA DUP ;color2g STA #f0 AND 
+	;color3/g LDA DUP ;color3g STA #04 SFT ORA ,&glow STR
+	!&prepare-palette2
+&r &rhigh 00 &rlow 00
+&g &ghigh 00 &glow 00
+&b &bhigh 00 &blow 00
+&prepare-palette2
+	;color0/b LDA DUP ;color0b STA #f0 AND 
+	;color1/b LDA DUP ;color1b STA #04 SFT ORA ,&bhigh STR
+	;color2/b LDA DUP ;color2b STA #f0 AND 
+	;color3/b LDA DUP ;color3b STA #04 SFT ORA ,&blow STR
+
+	,&r LDR2 .System/r DEO2
+	,&g LDR2 .System/g DEO2
+	,&b LDR2 .System/b DEO2
+
+	JMP2r
+( na-dr )
+( @color0 [ &r af &g c8 &b dc ] )
+( @color1 [ &r 8a &g 13 &b 19 ] )
+( @color2 [ &r cd &g a3 &b 8d ] )
+( @color3 [ &r 73 &g 57 &b 41 ] )
+( an-ba )
+( @color0 [ &r e4 &g e5 &b ea ] )
+( @color1 [ &r 29 &g 18 &b 0e ] )
+( @color2 [ &r dc &g b6 &b 9f ] )
+( @color3 [ &r d4 &g 8d &b 59 ] )
+@color0 [ &r 5e &g 82 &b e6 ]
+@color1 [ &r e3 &g e7 &b e2 ]
+@color2 [ &r 83 &g 52 &b 43 ]
+@color3 [ &r f7 &g e4 &b c6 ]
 
 ( chooses closest color from palette )
 @pick-color
-	#00 [ ;color/r LDA ] [ ,color0/r LDR ] GTHk ?{ SWP } SUB
-	#00 [ ,color/g LDR ] [ ,color0/g LDR ] GTHk ?{ SWP } SUB ADD2
-	#00 [ ,color/b LDR ] [ ,color0/b LDR ] GTHk ?{ SWP } SUB ADD2
-	,color/mindist STR2 #00 ;color/mindistcol STA
+	#00 [ ,color/r LDR ] [ LIT @color0r $1 ] GTHk ?{ SWP } SUB
+	#00 [ ,color/g LDR ] [ LIT @color0g $1 ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/b LDR ] [ LIT @color0b $1 ] GTHk ?{ SWP } SUB ADD2
+	,color/mindist STR2 #00 ,color/mindistcol STR
 	
 	#0000
-	#00 [ ,color/r LDR ] [ ,color1/r LDR ] GTHk ?{ SWP } SUB
-	#00 [ ,color/g LDR ] [ ,color1/g LDR ] GTHk ?{ SWP } SUB ADD2
-	#00 [ ,color/b LDR ] [ ,color1/b LDR ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/r LDR ] [ LIT @color1r $1 ] GTHk ?{ SWP } SUB
+	#00 [ ,color/g LDR ] [ LIT @color1g $1 ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/b LDR ] [ LIT @color1b $1 ] GTHk ?{ SWP } SUB ADD2
 	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #01 ,color/mindistcol STR } POP2
 	
 	!pick-color2
-( hardcoded )
-@color0 [ &r d0 &g d0 &b d0 ]
-@color1 [ &r 90 &g 70 &b 60 ]
-@color2 [ &r 70 &g 50 &b 40 ]
-@color3 [ &r 30 &g 30 &b 30 ]
 @color [ &r 00 &g 00 &b 00 &mindist ffff &mindistcol 00 ]
 @pick-color2
 	#0000
-	#00 [ ,color/r LDR ] [ ,color2/r LDR ] GTHk ?{ SWP } SUB
-	#00 [ ,color/g LDR ] [ ,color2/g LDR ] GTHk ?{ SWP } SUB ADD2
-	#00 [ ,color/b LDR ] [ ,color2/b LDR ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/r LDR ] [ LIT @color2r $1 ] GTHk ?{ SWP } SUB
+	#00 [ ,color/g LDR ] [ LIT @color2g $1 ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/b LDR ] [ LIT @color2b $1 ] GTHk ?{ SWP } SUB ADD2
 	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #02 ,color/mindistcol STR } POP2
 	
 	#0000
-	#00 [ ,color/r LDR ] [ ,color3/r LDR ] GTHk ?{ SWP } SUB
-	#00 [ ,color/g LDR ] [ ,color3/g LDR ] GTHk ?{ SWP } SUB ADD2
-	#00 [ ,color/b LDR ] [ ,color3/b LDR ] GTHk ?{ SWP } SUB ADD2
-	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #03 ;color/mindistcol STA } POP2
+	#00 [ ,color/r LDR ] [ LIT @color3r $1 ] GTHk ?{ SWP } SUB
+	#00 [ ,color/g LDR ] [ LIT @color3g $1 ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/b LDR ] [ LIT @color3b $1 ] GTHk ?{ SWP } SUB ADD2
+	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #03 ,color/mindistcol STR } POP2
 
-	( ;color/mindist LDA2 print-short )
-	( ;color/mindistcol LDA #30 ADD .Console/write DEO )
 	;color/mindistcol LDA
 	JMP2r
 	
-
-( https://wiki.xxiivv.com/site/uxntal_library.html )
-@print-short ( short* -- )
-	SWP print-short/b
-	&b ( -- )
-		DUP #04 SFT print-short/c
-	&c ( -- )
-		#0f AND DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD .Console/write DEO
-		JMP2r
 
 @print-str ( str* -- )
 	&while ( -- )
