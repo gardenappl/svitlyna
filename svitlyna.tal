@@ -20,11 +20,6 @@
 	#d753 .System/g DEO2
 	#d644 .System/b DEO2
 
-	( testing stack being fine after complicated operation )
-	LIT ") 
-	pick-color
-	.Console/write DEO
-
 	;filename .File/name DEO2
 	#000e .File/length DEO2 ;buffer .File/read DEO2
 	.File/success DEI2 #000e EQU2 ?{ !bad-file }
@@ -53,27 +48,27 @@
 
 
 @ff-file-print-bunch
-	#0000
 	&loop
 		ff-file-print
-		INC2 DUP2 #ffff EQU2 ?{ !&loop }
-	POP2
-	BRK
+		!&loop
+	!fail
 
 	
-	( 16-bit depth, not alpha-premultiplied; we discard the lower 12 bits )
-	( upper 4 bits are multiplied with alpha to get 8 bits )
+( 16-bit depth, not alpha-premultiplied; we discard the lower 12 bits )
+( 4 bit color multiplied with 4 bit alpha to get 8 bits )
 @ff-buffer [ &r $2 &g $2 &b $2 &a $2 ]
 @ff-file-print
 	;ff-buffer .File/read DEO2
-	,ff-buffer/r LDR DEBUG-BYTE #04 SFT DEBUG-BYTE ,ff-buffer/a LDR DEBUG-BYTE #04 SFT MUL DEBUG-BYTE ;color/r STA
-	,ff-buffer/g LDR DEBUG-BYTE #04 SFT DEBUG-BYTE ,ff-buffer/a LDR DEBUG-BYTE #04 SFT MUL DEBUG-BYTE ;color/g STA
-	,ff-buffer/b LDR DEBUG-BYTE #04 SFT DEBUG-BYTE ,ff-buffer/a LDR DEBUG-BYTE #04 SFT MUL DEBUG-BYTE ;color/b STA
-	( LIT "# .Console/write DEO  )
-	( ;color/r LDA print-byte  )
-	( ;color/g LDA print-byte  )
-	( ;color/b LDA print-byte  )
-
+	,ff-buffer/a LDR INC ?{
+		,ff-buffer/r LDR #04 SFT ,ff-buffer/a LDR #04 SFT MUL ;color/r STA
+		,ff-buffer/g LDR #04 SFT ,ff-buffer/a LDR #04 SFT MUL ;color/g STA
+		,ff-buffer/b LDR #04 SFT ,ff-buffer/a LDR #04 SFT MUL ;color/b STA
+		print-pixel
+		JMP2r
+	}
+	,ff-buffer/r LDR ;color/r STA
+	,ff-buffer/g LDR ;color/g STA
+	,ff-buffer/b LDR ;color/b STA
 	print-pixel
 	JMP2r
 
@@ -91,40 +86,38 @@
 	JMP2r
 	
 
-@pick-color ( -- color )
-	#0000 ( distance to current color )
-	#00 
-	  #01 ;color/r LDA #00 ;color0/r LDA SUB2 ( 01xx if (r - r0) >= 0, 00xx if (r - r0) < 0 )
-	( in negative case becomes (r0 - r - 1) ) SWP ?{ #ff SWP SUB }
-	( add to current distance )                                    ADD2 
-	#0001 ;color/g LDA #00 ;color0/g LDA SUB2 SWP ?{ #ff SWP SUB } ADD2
-	#0001 ,color/b LDR #00 ,color0/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
-	,color/mindist STR2 #00 ,color/mindistcol STR
-
+( chooses closest color from palette )
+@pick-color
+	#00 [ ;color/r LDA ] [ ,color0/r LDR ] GTHk ?{ SWP } SUB
+	#00 [ ,color/g LDR ] [ ,color0/g LDR ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/b LDR ] [ ,color0/b LDR ] GTHk ?{ SWP } SUB ADD2
+	,color/mindist STR2 #00 ;color/mindistcol STA
+	
 	#0000
-	#0001 ,color/r LDR #00 ,color1/r LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
-	#0001 ,color/g LDR #00 ,color1/g LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
-	#0001 ,color/b LDR #00 ,color1/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	#00 [ ,color/r LDR ] [ ,color1/r LDR ] GTHk ?{ SWP } SUB
+	#00 [ ,color/g LDR ] [ ,color1/g LDR ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/b LDR ] [ ,color1/b LDR ] GTHk ?{ SWP } SUB ADD2
 	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #01 ,color/mindistcol STR } POP2
+	
 	!pick-color2
 ( hardcoded )
-@color0 [ &r d3 &g d2 &b d0 ]
-@color1 [ &r 9e &g 77 &b 68 ]
-@color2 [ &r 76 &g 50 &b 43 ]
-@color3 [ &r 31 &g 34 &b 39 ]
-@color [ &r 00 &g 00 &b 80 &mindist ffff &mindistcol 00 ]
+@color0 [ &r d0 &g d0 &b d0 ]
+@color1 [ &r 90 &g 70 &b 60 ]
+@color2 [ &r 70 &g 50 &b 40 ]
+@color3 [ &r 30 &g 30 &b 30 ]
+@color [ &r 00 &g 00 &b 00 &mindist ffff &mindistcol 00 ]
 @pick-color2
 	#0000
-	#0001 ,color/r LDR #00 ,color2/r LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
-	#0001 ,color/g LDR #00 ,color2/g LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
-	#0001 ,color/b LDR #00 ,color2/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	#00 [ ,color/r LDR ] [ ,color2/r LDR ] GTHk ?{ SWP } SUB
+	#00 [ ,color/g LDR ] [ ,color2/g LDR ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/b LDR ] [ ,color2/b LDR ] GTHk ?{ SWP } SUB ADD2
 	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #02 ,color/mindistcol STR } POP2
-
+	
 	#0000
-	#0001 ,color/r LDR #00 ,color3/r LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
-	#0001 ,color/g LDR #00 ;color3/g LDA SUB2 SWP ?{ #ff SWP SUB } ADD2
-	#0001 ;color/b LDA #00 ;color3/b LDA SUB2 SWP ?{ #ff SWP SUB } ADD2
-	DUP2 ;color/mindist LDA2 GTH2 ?{ DUP2 ;color/mindist STA2 #03 ;color/mindistcol STA } POP2
+	#00 [ ,color/r LDR ] [ ,color3/r LDR ] GTHk ?{ SWP } SUB
+	#00 [ ,color/g LDR ] [ ,color3/g LDR ] GTHk ?{ SWP } SUB ADD2
+	#00 [ ,color/b LDR ] [ ,color3/b LDR ] GTHk ?{ SWP } SUB ADD2
+	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #03 ;color/mindistcol STA } POP2
 
 	( ;color/mindist LDA2 print-short )
 	( ;color/mindistcol LDA #30 ADD .Console/write DEO )
@@ -162,10 +155,10 @@
 	BRK
 	
 @end
-	;&str print-str
-	&str "Готово!
-	#0000 .Screen/vector DEO2
-	BRK
+	;&str print-str #0000 .Screen/vector DEO2 BRK
+	&str "Готово! 00
+
+@start-str "Hi 20 "there! 00
 
 @print-byte ( b -- )
 	DUP #04 SFT DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD .Console/write DEO
