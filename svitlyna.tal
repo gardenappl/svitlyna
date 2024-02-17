@@ -7,15 +7,26 @@
 
 |a0 @File [ &vector $2 &success $2 &stat $2 &delete $1 &append $1 &name $2 &length $2 &read $2 &write $2 ]
 
-%DEBUG { DUP .Console/write DEO }
+
+( %DEBUG { DUP .Console/write DEO } )
+( %DEBUG-BYTE { DUP print-byte } )
+
+%DEBUG { #00 POP }
+%DEBUG-BYTE { #00 POP }
 
 |0100
+	( hardcoded colors for now )
+	#dd93 .System/r DEO2
+	#db63 .System/g DEO2
+	#da54 .System/b DEO2
+
+	( testing stack being fine after complicated operation )
+	LIT ") 
 	pick-color
-	LIT "! .Console/write DEO
+	.Console/write DEO
 
 	;filename .File/name DEO2
-	#000e .File/length DEO2
-	;buffer .File/read DEO2
+	#000e .File/length DEO2 ;buffer .File/read DEO2
 	.File/success DEI2 #000e EQU2 ?{ !bad-file }
 
 	;buffer/magic LDA DEBUG DUP LIT "f EQU ?{ !bad-file }
@@ -28,73 +39,97 @@
 	!ff-header
 	&magic "farbfeld 00
 @ff-size
-	;buffer/ffwidthhigh LDA2 "0000 EQU2 ?{ !too-large }
-	;buffer/ffwidthlow LDA2 .width STZ2
-	;buffer/ffheighthigh LDA2 "0000 EQU2 ?{ !too-large }
-	#0002 .File/length DEO2 
-	;buffer/ffheightlow .File/read DEO2
-	;buffer/ffheightlow LDA2 .height STZ2
-@end
-	( success! )
-	.width LDZ2
-	DUP2 print-short
-	#0a .Console/write DEO
-	.Screen/width DEO2
+	;buffer/ffwidthhigh LDA2 #0000 EQU2 ?{ !too-large }
+	;buffer/ffwidthlow LDA2 DUP2 .width STZ2 .Screen/width DEO2
+	;buffer/ffheighthigh LDA2 #0000 EQU2 ?{ !too-large }
+	#0002 .File/length DEO2 ;buffer/ffheightlow .File/read DEO2
+	;buffer/ffheightlow LDA2 DUP2 .height STZ2 .Screen/height DEO2
+	
+	#01 .Screen/auto DEO
+	#0008 .File/length DEO2
 
-	.height LDZ2 
-	DUP2 print-short
-	#0a .Console/write DEO
-	.Screen/height DEO2
-
+	;ff-file-print-bunch .Screen/vector DEO2
 	BRK
 
-@pick-color
+
+@ff-file-print-bunch
+	#0000
+	&loop
+		ff-file-print
+		INC2 DUP2 #05ff EQU2 ?{ !&loop }
+	POP2
+	BRK
+
+	
+	( 16-bit depth, not alpha-premultiplied; we discard the lower 12 bits )
+	( upper 4 bits are multiplied with alpha to get 8 bits )
+@ff-buffer [ &r $2 &g $2 &b $2 &a $2 ]
+@ff-file-print
+	;ff-buffer .File/read DEO2
+	,ff-buffer/r LDR DEBUG-BYTE #04 SFT DEBUG-BYTE ,ff-buffer/a LDR DEBUG-BYTE #04 SFT MUL DEBUG-BYTE ;color/r STA
+	,ff-buffer/g LDR DEBUG-BYTE #04 SFT DEBUG-BYTE ,ff-buffer/a LDR DEBUG-BYTE #04 SFT MUL DEBUG-BYTE ;color/g STA
+	,ff-buffer/b LDR DEBUG-BYTE #04 SFT DEBUG-BYTE ,ff-buffer/a LDR DEBUG-BYTE #04 SFT MUL DEBUG-BYTE ;color/b STA
+	LIT "# .Console/write DEO 
+	;color/r LDA print-byte 
+	;color/g LDA print-byte 
+	;color/b LDA print-byte 
+
+	print-pixel
+	JMP2r
+
+
+( assumes screen auto x, RGB written to ;color )
+@print-pixel
+	pick-color 
+	LIT "! .Console/write DEO DUP #30 ADD .Console/write DEO 
+	.Screen/pixel DEO
+	.Screen/x DEI2 
+	LIT "x .Console/write DEO DUP2 print-short #0a .Console/write DEO
+	.width LDZ2
+	NEQ2 ?{ #0000 .Screen/x DEO2 .Screen/y DEI2 INC2 DUP2 .height LDZ2 NEQ2 ?{ !end } .Screen/y DEO2 }
+
+	JMP2r
+	
+
+@pick-color ( -- color )
 	#0000 ( distance to current color )
 	#00 
 	  #01 ;color/r LDA #00 ;color0/r LDA SUB2 ( 01xx if (r - r0) >= 0, 00xx if (r - r0) < 0 )
 	( in negative case becomes (r0 - r - 1) ) SWP ?{ #ff SWP SUB }
-	                                                           ADD2 ( add to current distance )
+	( add to current distance )                                    ADD2 
 	#0001 ;color/g LDA #00 ;color0/g LDA SUB2 SWP ?{ #ff SWP SUB } ADD2
-	#0001 ;color/b LDA #00 ,color0/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
-	DEBUG-SHORT-NEWL
-	DUP2 ,color/mindist LDR2 GTH2 ?{ ,color/mindist STR2 #00 ,color/mindistcol STR }
+	#0001 ,color/b LDR #00 ,color0/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
+	,color/mindist STR2 #00 ,color/mindistcol STR
 
 	#0000
 	#0001 ,color/r LDR #00 ,color1/r LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
 	#0001 ,color/g LDR #00 ,color1/g LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
 	#0001 ,color/b LDR #00 ,color1/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
-	DEBUG-SHORT-NEWL
-	DUP2 ,color/mindist LDR2 GTH2 ?{ ,color/mindist STR2 #01 ,color/mindistcol STR }
+	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #01 ,color/mindistcol STR } POP2
 	!pick-color2
-
 ( hardcoded )
-@color0 [ &r 00 &g 00 &b 00 ]
-@color1 [ &r ff &g 00 &b 00 ]
-@color2 [ &r 00 &g ff &b 00 ]
-@color3 [ &r 00 &g 00 &b ff ]
-
-@color [ &r 00 &g 00 &b 00 &mindist ffff &mindistcol 00 ]
-
+@color0 [ &r d3 &g d2 &b d0 ]
+@color1 [ &r d1 &g aa &b 99 ]
+@color2 [ &r 8a &g 65 &b 4b ]
+@color3 [ &r 31 &g 34 &b 39 ]
+@color [ &r 00 &g 00 &b 80 &mindist ffff &mindistcol 00 ]
 @pick-color2
 	#0000
 	#0001 ,color/r LDR #00 ,color2/r LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
 	#0001 ,color/g LDR #00 ,color2/g LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
 	#0001 ,color/b LDR #00 ,color2/b LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
-	DEBUG-SHORT-NEWL
-	DUP2 ,color/mindist LDR2 GTH2 ?{ ,color/mindist STR2 #02 ,color/mindistcol STR }
+	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #02 ,color/mindistcol STR } POP2
 
 	#0000
 	#0001 ,color/r LDR #00 ,color3/r LDR SUB2 SWP ?{ #ff SWP SUB } ADD2
 	#0001 ,color/g LDR #00 ;color3/g LDA SUB2 SWP ?{ #ff SWP SUB } ADD2
 	#0001 ;color/b LDA #00 ;color3/b LDA SUB2 SWP ?{ #ff SWP SUB } ADD2
-	DEBUG-SHORT-NEWL
-	DUP2 ;color/mindist LDA2 GTH2 ?{ ;color/mindist STA2 #03 ;color/mindistcol STA }
+	DUP2 ;color/mindist LDA2 GTH2 ?{ DUP2 ;color/mindist STA2 #03 ;color/mindistcol STA } POP2
 
-	;color/mindist LDA2 print-short
-	;color/mindistcol LDA #30 ADD .Console/write DEO
-
+	( ;color/mindist LDA2 print-short )
+	( ;color/mindistcol LDA #30 ADD .Console/write DEO )
+	;color/mindistcol LDA
 	JMP2r
-
 	
 
 ( https://wiki.xxiivv.com/site/uxntal_library.html )
@@ -111,12 +146,6 @@
 		LDAk .Console/write DEO
 		INC2 LDAk ?&while
 	POP2 JMP2r
-
-@DEBUG-SHORT-NEWL
-	DUP2
-	print-short
-	#0a .Console/write DEO
-	JMP2r
 	
 
 @bad-file 
@@ -131,6 +160,18 @@
 	print-str
 	#01 .System/state DEO
 	BRK
+	
+@end
+	;&str print-str
+	&str "Готово!
+	#0000 .Screen/vector DEO2
+	BRK
+
+@print-byte ( b -- )
+	DUP #04 SFT DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD .Console/write DEO
+	#0f AND DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD .Console/write DEO
+	JMP2r
+
 
 @filename "image.ff 00
 @buffer [
