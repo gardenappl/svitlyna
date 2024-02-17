@@ -3,7 +3,7 @@
 |20 @Screen [ &vector $2 &width $2 &height $2 &auto $1 &pad $1 &x $2 &y $2 &addr $2 &pixel $1 &sprite $1 ]
 
 |70 
-@width $2 @height $2 @x $2 @y $2
+@width $2 @height $2
 
 |a0 @File [ &vector $2 &success $2 &stat $2 &delete $1 &append $1 &name $2 &length $2 &read $2 &write $2 ]
 
@@ -16,9 +16,9 @@
 
 |0100
 	( hardcoded colors for now )
-	#dd93 .System/r DEO2
-	#db63 .System/g DEO2
-	#da54 .System/b DEO2
+	#da73 .System/r DEO2
+	#d753 .System/g DEO2
+	#d644 .System/b DEO2
 
 	( testing stack being fine after complicated operation )
 	LIT ") 
@@ -56,7 +56,7 @@
 	#0000
 	&loop
 		ff-file-print
-		INC2 DUP2 #05ff EQU2 ?{ !&loop }
+		INC2 DUP2 #ffff EQU2 ?{ !&loop }
 	POP2
 	BRK
 
@@ -69,10 +69,10 @@
 	,ff-buffer/r LDR DEBUG-BYTE #04 SFT DEBUG-BYTE ,ff-buffer/a LDR DEBUG-BYTE #04 SFT MUL DEBUG-BYTE ;color/r STA
 	,ff-buffer/g LDR DEBUG-BYTE #04 SFT DEBUG-BYTE ,ff-buffer/a LDR DEBUG-BYTE #04 SFT MUL DEBUG-BYTE ;color/g STA
 	,ff-buffer/b LDR DEBUG-BYTE #04 SFT DEBUG-BYTE ,ff-buffer/a LDR DEBUG-BYTE #04 SFT MUL DEBUG-BYTE ;color/b STA
-	LIT "# .Console/write DEO 
-	;color/r LDA print-byte 
-	;color/g LDA print-byte 
-	;color/b LDA print-byte 
+	( LIT "# .Console/write DEO  )
+	( ;color/r LDA print-byte  )
+	( ;color/g LDA print-byte  )
+	( ;color/b LDA print-byte  )
 
 	print-pixel
 	JMP2r
@@ -81,10 +81,10 @@
 ( assumes screen auto x, RGB written to ;color )
 @print-pixel
 	pick-color 
-	LIT "! .Console/write DEO DUP #30 ADD .Console/write DEO 
+	( LIT "! .Console/write DEO DUP #30 ADD .Console/write DEO )
 	.Screen/pixel DEO
 	.Screen/x DEI2 
-	LIT "x .Console/write DEO DUP2 print-short #0a .Console/write DEO
+	( LIT "x .Console/write DEO DUP2 print-short #0a .Console/write DEO )
 	.width LDZ2
 	NEQ2 ?{ #0000 .Screen/x DEO2 .Screen/y DEI2 INC2 DUP2 .height LDZ2 NEQ2 ?{ !end } .Screen/y DEO2 }
 
@@ -109,8 +109,8 @@
 	!pick-color2
 ( hardcoded )
 @color0 [ &r d3 &g d2 &b d0 ]
-@color1 [ &r d1 &g aa &b 99 ]
-@color2 [ &r 8a &g 65 &b 4b ]
+@color1 [ &r 9e &g 77 &b 68 ]
+@color2 [ &r 76 &g 50 &b 43 ]
 @color3 [ &r 31 &g 34 &b 39 ]
 @color [ &r 00 &g 00 &b 80 &mindist ffff &mindistcol 00 ]
 @pick-color2
