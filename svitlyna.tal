@@ -1,11 +1,23 @@
-|00 @System [ &vector $2 &expansion $2 &wst $1 &rst $1 &metadata $2 &r $2 &g $2 &b $2 &debug $1 &state $1 ]
-|10 @Console [ &vector $2 &read $1 &pad $4 &type $1 &write $1 &error $1 ]
-|20 @Screen [ &vector $2 &width $2 &height $2 &auto $1 &pad $1 &x $2 &y $2 &addr $2 &pixel $1 &sprite $1 ]
+|00 @System [ 
+	&vector $2 &expansion $2 &wst $1 &rst $1 
+	&metadata $2 &r $2 &g $2 &b $2 &debug $1 &state $1 ]
+|10 @Console [ 
+	&vector $2 &read $1 &pad $4 
+	&type $1 &write $1 &error $1 ]
+|20 @Screen [ 
+	&vector $2 &width $2 &height $2 &auto $1 &pad 
+	$1 &x $2 &y $2 &addr $2 &pixel $1 &sprite $1 ]
 
-|70 
-@width $2 @height $2
+|70 @img-w $2 @img-h $2 @view-x $2 @view-y $2 
 
-|a0 @File [ &vector $2 &success $2 &stat $2 &delete $1 &append $1 &name $2 &length $2 &read $2 &write $2 ]
+( set only if needed by large images )
+@capabilities $1 
+%CAP_HIGH_MEMORY { #01 }
+%CAP_FULLSCREEN { #02 }
+
+|a0 @File [ 
+	&vector $2 &success $2 &stat $2 &delete $1 
+	&append $1 &name $2 &length $2 &read $2 &write $2 ]
 
 
 |0100
@@ -52,9 +64,12 @@
 @ff-file-print
 	;ff-buffer .File/read DEO2
 	,ff-buffer/a LDR INC ?{
-		,ff-buffer/r LDR #04 SFT ,ff-buffer/a LDR #04 SFT MUL ;color/r STA
-		,ff-buffer/g LDR #04 SFT ,ff-buffer/a LDR #04 SFT MUL ;color/g STA
-		,ff-buffer/b LDR #04 SFT ,ff-buffer/a LDR #04 SFT MUL ;color/b STA
+		,ff-buffer/r LDR #04 SFT 
+		,ff-buffer/a LDR #04 SFT MUL ;color/r STA
+		,ff-buffer/g LDR #04 SFT 
+		,ff-buffer/a LDR #04 SFT MUL ;color/g STA
+		,ff-buffer/b LDR #04 SFT 
+		,ff-buffer/a LDR #04 SFT MUL ;color/b STA
 		print-pixel
 		JMP2r
 	}
@@ -71,7 +86,10 @@
 	.Screen/pixel DEO
 	.Screen/x DEI2 
 	.width LDZ2
-	NEQ2 ?{ #0000 .Screen/x DEO2 .Screen/y DEI2 INC2 DUP2 .height LDZ2 NEQ2 ?{ !end } .Screen/y DEO2 }
+	NEQ2 ?{ 
+		#0000 .Screen/x DEO2 
+		.Screen/y DEI2 INC2 DUP2 
+		.height LDZ2 NEQ2 ?{ !end } .Screen/y DEO2 }
 
 	JMP2r
 
@@ -107,14 +125,14 @@
 ( @color2 [ &r cd &g a3 &b 8d ] )
 ( @color3 [ &r 73 &g 57 &b 41 ] )
 ( an-ba )
-( @color0 [ &r e4 &g e5 &b ea ] )
-( @color1 [ &r 29 &g 18 &b 0e ] )
-( @color2 [ &r dc &g b6 &b 9f ] )
-( @color3 [ &r d4 &g 8d &b 59 ] )
-@color0 [ &r 5e &g 82 &b e6 ]
-@color1 [ &r e3 &g e7 &b e2 ]
-@color2 [ &r 83 &g 52 &b 43 ]
-@color3 [ &r f7 &g e4 &b c6 ]
+@color0 [ &r e4 &g e5 &b ea ]
+@color1 [ &r 29 &g 18 &b 0e ]
+@color2 [ &r dc &g b6 &b 9f ]
+@color3 [ &r d4 &g 8d &b 59 ]
+( @color0 [ &r 5e &g 82 &b e6 ] )
+( @color1 [ &r e3 &g e7 &b e2 ] )
+( @color2 [ &r 83 &g 52 &b 43 ] )
+( @color3 [ &r f7 &g e4 &b c6 ] )
 
 ( chooses closest color from palette )
 @pick-color
@@ -127,7 +145,8 @@
 	#00 [ ,color/r LDR ] [ LIT @color1r $1 ] GTHk ?{ SWP } SUB
 	#00 [ ,color/g LDR ] [ LIT @color1g $1 ] GTHk ?{ SWP } SUB ADD2
 	#00 [ ,color/b LDR ] [ LIT @color1b $1 ] GTHk ?{ SWP } SUB ADD2
-	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #01 ,color/mindistcol STR } POP2
+	DUP2 ,color/mindist LDR2 GTH2 
+	?{ DUP2 ,color/mindist STR2 #01 ,color/mindistcol STR } POP2
 	
 	!pick-color2
 @color [ &r 00 &g 00 &b 00 &mindist ffff &mindistcol 00 ]
@@ -136,13 +155,15 @@
 	#00 [ ,color/r LDR ] [ LIT @color2r $1 ] GTHk ?{ SWP } SUB
 	#00 [ ,color/g LDR ] [ LIT @color2g $1 ] GTHk ?{ SWP } SUB ADD2
 	#00 [ ,color/b LDR ] [ LIT @color2b $1 ] GTHk ?{ SWP } SUB ADD2
-	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #02 ,color/mindistcol STR } POP2
+	DUP2 ,color/mindist LDR2 GTH2 
+	?{ DUP2 ,color/mindist STR2 #02 ,color/mindistcol STR } POP2
 	
 	#0000
 	#00 [ ,color/r LDR ] [ LIT @color3r $1 ] GTHk ?{ SWP } SUB
 	#00 [ ,color/g LDR ] [ LIT @color3g $1 ] GTHk ?{ SWP } SUB ADD2
 	#00 [ ,color/b LDR ] [ LIT @color3b $1 ] GTHk ?{ SWP } SUB ADD2
-	DUP2 ,color/mindist LDR2 GTH2 ?{ DUP2 ,color/mindist STR2 #03 ,color/mindistcol STR } POP2
+	DUP2 ,color/mindist LDR2 GTH2 
+	?{ DUP2 ,color/mindist STR2 #03 ,color/mindistcol STR } POP2
 
 	;color/mindistcol LDA
 	JMP2r
@@ -175,8 +196,11 @@
 @start-str "Hi 20 "there! 00
 
 @print-byte ( b -- )
-	DUP #04 SFT DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD .Console/write DEO
-	#0f AND DUP #09 GTH #27 MUL ADD [ LIT "0 ] ADD .Console/write DEO
+	DUP #04 SFT DUP #09 GTH #27 MUL 
+	ADD [ LIT "0 ] ADD .Console/write DEO
+
+	#0f AND DUP #09 GTH #27 MUL 
+	ADD [ LIT "0 ] ADD .Console/write DEO
 	JMP2r
 
 
@@ -189,6 +213,15 @@
 	&ffwidthlow   &qoiheightlow  $2
 	&ffheighthigh &qoichan       $1
 	              &qoispace      $1
-	&ffheightlow                 $2
-]
-@imagelines
+	&ffheightlow                 $2 ]
+
+( smol lines: #0800-#2000, 0x0400 = 1024  bytes per line, 
+              1024  * 3 / 4 = 768   pixels )
+( big lines:  #1000-#ffff, 0x5000 = 20480 bytes per line, 
+              20480 * 3 / 4 = 15360 pixels )
+|0800 @line-1-smol
+|1000              @line-1-big
+|1200 @line-2-smol
+|1600 @line-3-smol
+|6000              @line-2-big
+|b000              @line-3-big
