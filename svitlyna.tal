@@ -19,10 +19,8 @@
 @img-w $2 @img-h $2 
 
 ( see bottom of file for reasoning )
-%mMAX_W_SMOL { #0300 }
-%mMAX_W_BIG { #3c00 }
-
-@view-x $2 @view-y $2
+%Mmax-w-smol { #0200 }
+%Mmax-w-big { #1000 }
 
 ( boolean options, could be compressed to bit fields if needed )
 ( dithering requires use of large memory buffers for lines )
@@ -34,47 +32,101 @@
 @color2 [ &r $1 &g $1 &b $1 ]
 @color3 [ &r $1 &g $1 &b $1 ]
 
+%Mprint-short { SWP print-byte print-byte }
+%Mendl { #0a .Console/write DEO }
+
 
 |0100
 ( hardcoded colors for now )
 #ffff .color0 STZ2 #ff .color0/b STZ
-#aaaa .color1 STZ2 #aa .color1/b STZ
+#9999 .color1 STZ2 #99 .color1/b STZ
 #5555 .color2 STZ2 #55 .color2/b STZ
 #0000 .color3 STZ2 #00 .color3/b STZ
 prepare-palette
 
-;filename .File/name DEO2
-#000e .File/length DEO2 ;buffer .File/read DEO2
-.File/success DEI2 #000e EQU2 ?{ !bad-file }
 
-;buffer/magic LDA DUP LIT "f EQU ?{ !bad-file }
+#01 .Screen/auto DEO
 
+.Console/type DEI ?{ ;read-stdin .Console/vector DEO2 BRK }
+;read-argument .Console/vector DEO2
+BRK
 
-@ff-init
-	#0000
-	&loop
-		INC2 DUP2 DUP2
-		;&magic ADD2 LDA DUP ?{ !ff-size }
-		ROT ROT ;buffer/magic ADD2 LDA EQU ?{ !bad-file }
-	!&loop
-!fail
-	[ &magic "farbfeld 00 ]
-
-
-@ff-size
-	;buffer/ffwidthhigh LDA2 #0000 EQU2 ?{ !too-large }
-	;buffer/ffwidthlow LDA2 DUP2 .img-w STZ2
-	;buffer/ffheighthigh LDA2 #0000 EQU2 ?{ !too-large }
-	#0002 .File/length DEO2 ;buffer/ffheightlow .File/read DEO2
-	;buffer/ffheightlow LDA2 DUP2 .img-h STZ2
-
-	handle-image-size
-	;ff-file-print .Screen/vector DEO2
+@read-stdin ( -> )
+	;buffer #000e read-n-stdin-bytes ?{ BRK }
+	;str/start print-str ;str/start-stdin print-str Mendl
+	;read-stdin-hack .Console/vector DEO2 
+( -> )
+@read-stdin-hack ( -> )
+	;buffer/ffheightlow #0002 read-n-stdin-bytes ?{ BRK }
+	ff-init
+	;ff-print-stdin .Console/vector DEO2
+	!ff-print-stdin
 BRK
 
 
-@ff-file-print ( -> )
-	#01 .Screen/auto DEO
+@read-argument ( -> )
+	.Console/type DEI 
+	DUP #03 NEQ ?{
+		;str/usage !fail-str
+	}
+	#02 EQU ?{ 
+		#0000 .Console/vector DEO2
+		;on-read-argument .Screen/vector DEO2
+		BRK
+	}
+	.Console/read DEI 
+	[ ,&name-length LDR2 ] ;filename ADD2 STA
+	[ ,&name-length LDR2 ] INC2 [ ,&name-length STR2 ]
+BRK 
+	&name-length 0000
+
+
+@on-read-argument ( -> )
+	#0000 .Screen/vector DEO2
+	;str/start print-str
+	;str/start-file print-str
+	;filename print-str
+	Mendl
+	
+
+	 ;filename .File/name DEO2
+	#000e .File/length DEO2 ;buffer .File/read DEO2
+	.File/success DEI2 #000e GTH2 ?bad-file
+
+	;buffer/magic LDA LIT "f NEQ ?bad-file
+	#0002 .File/length DEO2 ;buffer/ffheightlow .File/read DEO2
+	ff-init
+	;ff-print-file .Screen/vector DEO2
+BRK
+
+
+@ff-print-stdin ( -> )
+	LIT ". .Console/write DEO
+	;ff-get-next-color/buffer #0008 
+	LIT "R .Console/write DEO
+	read-n-stdin-bytes ?{ 
+		LIT "A .Console/write DEO 
+		;ff-print-stdin Mprint-short
+		.Console/vector DEI2 Mprint-short
+	BRK }
+
+	;ff-print-stdin Mprint-short
+	.Console/vector DEI2 Mprint-short
+	LIT ") .Console/write DEO
+	ff-get-next-color
+	;color/b STA ;color/g STA ;color/b STA
+	pick-color .Screen/pixel DEO
+	move-print-pos ?{
+		LIT "M .Console/write DEO
+		;str/end print-str 
+		#0000 .Console/vector DEO2 
+	}
+	LIT "N .Console/write DEO
+	!ff-print-stdin
+BRK
+
+
+@ff-print-file ( -> )
 	#0008 .File/length DEO2
 
 	&loop ( -- )
@@ -83,22 +135,46 @@ BRK
 		ff-get-next-color
 		;color/b STA ;color/g STA ;color/b STA
 		pick-color .Screen/pixel DEO
-		move-print-pos ?&loop
-	
-	&loop-end
+		move-print-pos 
+	?&loop
+
 	;str/end print-str 
-	#0000 .Screen/vector DEO2 
+	#0000 .Screen/vector DEO2
 BRK
 
 
-@move-print-pos ( -- continue )
-	.Screen/x DEI2 .img-w LDZ2 EQU2 ?&line-end #01 JMP2r
+@ff-init ( -- )
+	#0000
+	&loop
+		DUP2k
+		;&magic ADD2 LDA DUP #00 NEQ ?{ Mendl !ff-size }
+		ROT ROT ;buffer/magic ADD2 LDA DUP .Console/write DEO NEQ ?bad-file
+		INC2 
+	!&loop
+	[ &magic "farbfeld 00 ]
+( -> )
 
-	&line-end
+@ff-size
+	;buffer/ffwidthhigh LDA2 #0000 EQU2 ?{ !too-large }
+	;buffer/ffwidthlow LDA2 DUP2 .img-w STZ2
+	;buffer/ffheighthigh LDA2 #0000 EQU2 ?{ !too-large }
+	;buffer/ffheightlow LDA2 DUP2 .img-h STZ2
+
+	handle-image-size
+JMP2r
+
+
+@move-print-pos ( -- continue )
+	.Screen/x DEI2 Mprint-short
+	.Screen/y DEI2 Mprint-short
+	LIT "E .Console/write DEO
+	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
 		#0000 .Screen/x DEO2 
 		.Screen/y DEI2 INC2 
 		DUP2 .Screen/y DEO2 
 		.img-h LDZ2 NEQ2
+	JMP2r }
+	#01
 JMP2r
 
 	
@@ -141,20 +217,21 @@ JMP2r
 
 
 @handle-image-size
+	;str/height print-str DUP2 Mprint-short Mendl
 	DUP2 .Screen/height DEO2
 	DUP2 .Screen/height DEI2 EQU2 ?{
 		#01 .no-fullscreen STZ
-		!&fullscreen-check-end
 	}
-	OVR2 .Screen/width DEO2
+	OVR2
+	DUP2 .Screen/width DEO2
+	;str/width print-str DUP2 Mprint-short Mendl
 	DUP2 .Screen/width DEI2 EQU2 ?{
 		#01 .no-fullscreen STZ
 	}
-	&fullscreen-check-end
 	OVR2
-	.no-fullscreen LDZ SUB ?{ !too-large }
+	.no-fullscreen LDZ SUB ?{ ;str/cannot-fullscreen !fail-str }
 
-	mMAX_W_SMOL LTH2 ?{ 
+	Mmax-w-smol LTH2 ?{ 
 		( memory check )
 		LIT "! #ffff STA
 		#ffff LDA LIT "! EQU ?{
@@ -166,17 +243,10 @@ JMP2r
 		}
 	}
 
-	mMAX_W_SMOL LTH2 ?{ 
-		( memory check )
-		LIT "! #ffff STA
-		#ffff LDA LIT "! EQU ?{
-			#01 .no-dithering STZ 
-		}
-		LIT "? #ffff STA
-		#ffff LDA LIT "? EQU ?{
-			#01 .no-dithering STZ 
-		}
+	Mmax-w-big LTH2 ?{ 
+		#01 .no-dithering STZ 
 	}
+	.no-fullscreen LDZ SUB ?{ ;str/cannot-fullscreen !fail-str }
 JMP2r
 
 
@@ -250,28 +320,6 @@ JMP2r
 	?&while
 	POP2 
 JMP2r
-	
-
-@bad-file 
-	;&str 
-!fail
-	&str "...Bad 20 "file 00
-
-
-@too-large
-	;&str 
-!fail
-	&str "...Too 20 "large 00
-
-
-@fail ( error-msg* -> )
-	print-str
-	#01 .System/state DEO
-BRK
-
-@str [
-	&end "Готово! 00
-]
 
 @print-byte ( b -- )
 	DUP #04 SFT DUP #09 GTH #27 MUL 
@@ -280,6 +328,49 @@ BRK
 	#0f AND DUP #09 GTH #27 MUL 
 	ADD [ LIT "0 ] ADD .Console/write DEO
 JMP2r
+
+@read-n-stdin-bytes ( addr* n* -- continue )
+	[ ,&count LDR2 ] DUP2 
+	ROT2 NEQ2 ?{
+		#0000 [ ,&count STR2 ] #00 ROT ROT STA #01 JMP2r
+	}
+	DUP2 INC2 [ ,&count STR2 ]
+	ADD2 .Console/read DEI ROT ROT STA
+	#00
+JMP2r	
+	&count 0000
+	
+
+@bad-file 
+	;&str 
+!fail-str
+	&str "...Bad 20 "file 00
+
+
+@too-large
+	;&str 
+!fail-str
+	&str "...Too 20 "large 00
+
+
+@fail-str ( error-msg* -> )
+	print-str
+( -> )
+@fail ( -> )
+	#01 .System/state DEO
+BRK
+
+
+@str [
+	&start "Reading 20 00
+	&start-file "file: 20 00
+	&start-stdin "standard 20 "input... 00
+	&end "Готово! 0a 00
+	&usage "Usage: 20 "svitlyna.rom 20 "image.ff 0a 00
+	&cannot-fullscreen "Unable 20 "to 20 "resize 20 "screen 0a 00
+	&width "w: 20 00
+	&height "h: 20 00
+]
 
 @buffer [
 	&magic                       $4
@@ -293,15 +384,42 @@ JMP2r
 ]
 
 
-@filename "image.ff 00
 
-( smol lines: #0800-#2000, 0x0400 = 1024  bytes per line, 
-              1024  * 3 / 4 = 768   pixels )
-( big lines:  #1000-#ffff, 0x5000 = 20480 bytes per line, 
-              20480 * 3 / 4 = 15360 pixels )
-|0800 @line-1-smol
-|1000              @line-1-big
-|1200 @line-2-smol
-|1600 @line-3-smol
-|6000              @line-2-big
-|b000              @line-3-big
+( 9 lines are needed: at least 8 to export a sprite,
+  multiple of 3 to use dithering )
+( smol 
+	lines:   #1000-#1d80
+	         0x0180 = 384 bytes per line
+	         384 / 3 * 4 = 512 pixels per line
+	sprites: #1d80-#1ddd
+	         0x0080 = 128 bytes total
+		 128 * 4 = 512 pixels per line )
+|1000 @line-1-smol !fail ( upper limit for 'smol' code )
+@filename
+|1180 @line-2-smol 
+|1300 @line-3-smol
+|1480 @line-4-smol
+|1600 @line-5-smol
+|1780 @line-6-smol
+|1900 @line-7-smol
+|1a80 @line-8-smol
+|1c00 @line-9-smol
+|1d80 @sprite-smol
+
+( big, is 8x smol
+	lines:   #8000-#f400
+	         0x0c00 = 3072 bytes per line
+	         3072 / 3 * 4 = 4096 pixels per line
+	sprites: #ec00-#f000
+	         0x0400 = 1024 bytes total
+		 1024 * 4 = 4096 pixels per line )
+|8000 @line-1-big
+|8c00 @line-2-big
+|9800 @line-3-big
+|a400 @line-4-big
+|b000 @line-5-big
+|bc00 @line-6-big
+|c800 @line-7-big
+|d400 @line-8-big
+|e000 @line-9-big
+|ec00 @sprite-big
