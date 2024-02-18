@@ -1,6 +1,9 @@
 *.rom
 *.rom.sym
+
 *.png
 *.jpg
 *.ff
 *.txt
+
+*.sh
