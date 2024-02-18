@@ -4,7 +4,7 @@
 ]
 |10 @Console [ 
 	&vector $2 &read $1 &pad $4 
-	&type $1 &write $1 &error $1600
+	&type $1 &write $1 &error $1
 ]
 |20 @Screen [ 
 	&vector $2 &width $2 &height $2 &auto $1 &pad 
@@ -12,7 +12,7 @@
 ]
 |a0 @File [ 
 	&vector $2 &success $2 &stat $2 &delete $1 
-	&append $1 &name $2 &length $2 &read $2 &write $2000
+	&append $1 &name $2 &length $2 &read $2 &write $2
 ]
 
 |0000 
@@ -40,7 +40,7 @@
 	&ff-h-high &ff-b     $2
 	&ff-h-low  &ff-a     $2
 ]
-@buf-size $1 @buf-size-expect $1 @buf-on-read $2
+@buf-size-expect $1 @buf-on-read $2
 %Mbuf-next { .buf-on-read STZ2 .buf-size-expect STZ }
 
 %Mprint-short { SWP print-byte print-byte }
@@ -83,18 +83,22 @@
 BRK
 
 
-@after-end ( -- )
-	;str/after-end print-str	
-JMP2r
+
+
+( i/o )
 
 
 @on-stdin ( -> )
-	.buf-size LDZk DUP .buf-size-expect LDZ NEQ ?{
-		#00 ROT STZ
+	LIT [ &index 00 ] 
+	( DUP print-byte LIT "& Mcout .Console/read DEI print-byte Mendl )
+	DUP .buf ADD .Console/read DEI SWP STZ
+	INC DUP .buf-size-expect LDZ NEQ ?{
+		( Mdump-buffer )
+		( call subroutine )
 		.buf-on-read LDZ2 JSR2
-	BRK
+		POP #00
 	}
-	.buf ADD .Console/read DEI SWP STZ
+	[ ,&index STR ]
 BRK
 
 
@@ -127,14 +131,15 @@ BRK
 
 	&loop
 		#00 .buf-size-expect LDZ .File/length DEO2
-		;buf Mprint-short #00 .buf Mprint-short Mendl
+		( ;buf Mprint-short #00 .buf Mprint-short Mendl )
 		;buf .File/read DEO2
 
 		( shouldn't read more than 255 bytes )
-		.File/success DEI2 Mprint-short 
-		.File/success DEI2 
-		#00 .buf-size-expect LDZ NEQ2 ?bad-file
-		Mdump-buffer
+		.File/success DEI2 #00 .buf-size-expect LDZ 
+		EQU2 ?{ !bad-file }
+
+
+		( call subroutine )
 		.buf-on-read LDZ2 JSR2
 
 		.buf-on-read LDZ2 ;after-end NEQ2 
@@ -142,19 +147,13 @@ BRK
 BRK
 
 
-@ff-print ( -- )
-		BRK
-	ff-get-next-color
-	;color/r STA ;color/g STA ;color/b STA
-	pick-color .Screen/pixel DEO
-	move-print-pos ?{
-		;str/end print-str 
-		;after-end .buf-on-read STZ2
-	}
-JMP2r
+
+
+( image format )
 
 
 @detect-magic ( -- )
+	LIT "m Mcout Mendl
 	#0000
 	&loop
 		DUP2
@@ -162,7 +161,7 @@ JMP2r
 		DUP2 ;&magic ADD2 LDA 
 		OVR .buf ADD LDZ
 		DUP .Console/write DEO 
-		NEQ ?bad-file
+		EQU ?{ !bad-file }
 		INC2 
 	!&loop
 	[ &magic "farbfeld 00 ]
@@ -175,10 +174,10 @@ JMP2r
 
 
 @ff-size ( -- )
-	.buf/ff-w-high LDZ2 ?too-large
+	.buf/ff-w-high LDZ2 #0000 EQU2 ?{ !too-large }
 	.buf/ff-w-low LDZ2 
 	DUP2 Mprint-short Mendl
-	.buf/ff-h-high LDZ2 ?too-large
+	.buf/ff-h-high LDZ2 #0000 EQU2 ?{ !too-large }
 	.buf/ff-h-low LDZ2
 	DUP2 Mprint-short Mendl
 	OVR2 Mprint-short Mendl
@@ -186,20 +185,6 @@ JMP2r
 	handle-image-size
 
 	#08 ;ff-print Mbuf-next
-JMP2r
-
-
-@move-print-pos ( -- continue )
-	( .Screen/x DEI2 Mprint-short )
-	( .Screen/y DEI2 Mprint-short )
-	( LIT "E .Console/write DEO )
-	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
-		#0000 .Screen/x DEO2 
-		.Screen/y DEI2 INC2 
-		DUP2 .Screen/y DEO2 
-		.img-h LDZ2 NEQ2
-	JMP2r }
-	#01
 JMP2r
 
 	
@@ -223,28 +208,45 @@ JMP2r
 JMP2r
 
 
+@ff-print ( -- )
+	ff-get-next-color
+	;color/r STA ;color/g STA ;color/b STA
+	pick-color .Screen/pixel DEO
+	move-print-pos ?{
+		;str/end print-str 
+		;after-end .buf-on-read STZ2
+	}
+JMP2r
+
+
+
+
+( misc. )
+
+
 @handle-image-size ( w* h* -- )
 	;str/height print-str DUP2 Mprint-short Mendl
-	;str/width print-str OVR2 Mprint-short Mendl
 
 	DUP2k .Screen/height DEO2 .img-h STZ2
-	DUP2 Mprint-short Mendl
-	( .Screen/height DEI2 EQU2 ?{ )
-	( 	#01 .no-fullscreen STZ )
-	( } )
-	DUP2 Mprint-short Mendl
-	POP2
+	;str/height print-str DUP2 Mprint-short Mendl
+	;str/height print-str .Screen/height DEI2 Mprint-short Mendl
+	.Screen/height DEI2 EQU2 ?{
+		;str/height print-str .Screen/height DEI2 
+		Mprint-short Mendl
+		#01 .no-fullscreen STZ
+	}
 
 	;str/width print-str DUP2 Mprint-short Mendl
 
-	DUP2 Mmax-w-big GTH2 ?too-large
-	DUP2 Mprint-short Mendl
+	DUP2 Mmax-w-big LTH2 ?{ !too-large }
 	DUP2k .Screen/width DEO2 .img-w STZ2
-	DUP2 Mprint-short Mendl
-	( .Screen/width DEI2 EQU2 ?{ )
-	( 	#01 .no-fullscreen STZ )
-	( } )
-	.no-fullscreen LDZ SUB ?{ ;str/cannot-fullscreen !fail-str }
+	;str/width print-str .Screen/width DEI2 Mprint-short Mendl
+	.Screen/width DEI2 EQU2 ?{
+		;str/width print-str .Screen/width DEI2 
+		Mprint-short Mendl
+		#01 .no-fullscreen STZ
+	}
+	.no-fullscreen LDZ #00 EQU ?{ ;str/cannot-fullscreen !fail-str }
 
 	( Mmax-w-smol LTH2 ?{ 
 		( memory check )
@@ -263,6 +265,16 @@ JMP2r
 	}
 	.no-fullscreen LDZ SUB ?{ ;str/cannot-fullscreen !fail-str } )
 JMP2r
+
+
+
+
+( image processing )
+
+
+
+
+( printing )
 
 
 ( probably overkill )
@@ -326,7 +338,36 @@ JMP2r
 
 	;color/mindistcol LDA
 JMP2r
-	
+
+
+@move-print-pos ( -- continue )
+	( .Screen/x DEI2 Mprint-short )
+	( .Screen/y DEI2 Mprint-short )
+	( LIT "E .Console/write DEO )
+	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
+		#0000 .Screen/x DEO2 
+		.Screen/y DEI2 INC2 
+		DUP2 .Screen/y DEO2 
+		.img-h LDZ2 NEQ2
+	JMP2r }
+	#01
+JMP2r
+
+
+
+
+( end )
+
+
+@after-end ( -- )
+	;str/after-end print-str	
+JMP2r
+
+
+
+
+( utils and stdlib )
+
 
 @print-str ( str* -- )
 	&while ( -- )
@@ -390,32 +431,15 @@ BRK
 	sprites: #1d80-#1ddd
 	         0x0080 = 128 bytes total
 		 128 * 4 = 512 pixels per line )
-|1000 @line-1-smol !fail ( upper limit for 'smol' code )
-@filename
-|1180 @line-2-smol 
-|1300 @line-3-smol
-|1480 @line-4-smol
-|1600 @line-5-smol
-|1780 @line-6-smol
-|1900 @line-7-smol
-|1a80 @line-8-smol
-|1c00 @line-9-smol
+|1000 @lines-smol    @filename
 |1d80 @sprite-smol
 
 ( big, is 8x smol
-	lines:   #8000-#f400
+	lines:   #8000-#ec00
 	         0x0c00 = 3072 bytes per line
 	         3072 / 3 * 4 = 4096 pixels per line
 	sprites: #ec00-#f000
 	         0x0400 = 1024 bytes total
 		 1024 * 4 = 4096 pixels per line )
-|8000 @line-1-big
-|8c00 @line-2-big
-|9800 @line-3-big
-|a400 @line-4-big
-|b000 @line-5-big
-|bc00 @line-6-big
-|c800 @line-7-big
-|d400 @line-8-big
-|e000 @line-9-big
+|8000 @lines-big
 |ec00 @sprite-big
