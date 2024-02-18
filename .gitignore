@@ -4,6 +4,7 @@
 *.png
 *.jpg
 *.ff
+*.bmp
 *.txt
 
 *.sh

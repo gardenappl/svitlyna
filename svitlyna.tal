@@ -23,9 +23,8 @@
 %Mmax-w-big { #1000 }
 
 ( boolean options, could be compressed to bit fields if needed )
-( dithering requires use of large memory buffers for lines )
-@no-dithering $1
 @no-fullscreen $1
+@streaming $1
 
 @color0 [ &r $1 &g $1 &b $1 ]
 @color1 [ &r $1 &g $1 &b $1 ]
@@ -46,6 +45,7 @@
 %Mprint-short { SWP print-byte print-byte }
 %Mcout { .Console/write DEO }
 %Mendl { #0a .Console/write DEO }
+%Mprint-bgr { LIT "# Mcout print-byte print-byte print-byte Mendl }
 %Mdump-buffer {
 	#00
 	&dump-buffer-loop 
@@ -62,10 +62,14 @@
 ( init )
 	;str/init print-str
 	( hardcoded colors for now )
-	#ffff .color0 STZ2 #ff .color0/b STZ
-	#9999 .color1 STZ2 #99 .color1/b STZ
-	#5555 .color2 STZ2 #55 .color2/b STZ
-	#0000 .color3 STZ2 #00 .color3/b STZ
+	#0f0f .color0 STZ2 #0f .color0/b STZ
+	#0f00 .color1 STZ2 #00 .color1/b STZ
+	#000f .color2 STZ2 #00 .color2/b STZ
+	#0000 .color3 STZ2 #0f .color3/b STZ
+	( #0f0f .color0 STZ2 #0f .color0/b STZ )
+	( #0a0a .color1 STZ2 #0a .color1/b STZ )
+	( #0505 .color2 STZ2 #05 .color2/b STZ )
+	( #0000 .color3 STZ2 #00 .color3/b STZ )
 	prepare-palette
 
 
@@ -96,6 +100,10 @@ BRK
 		( Mdump-buffer )
 		( call subroutine )
 		.buf-on-read LDZ2 JSR2
+		.buf-on-read LDZ2 ;after-end NEQ2 ?{ 
+			#0000 .Console/vector DEO2
+			( #0000 .Screen/vector DEO2 )
+		}
 		POP #00
 	}
 	[ ,&index STR ]
@@ -129,6 +137,7 @@ BRK
 
 	;filename .File/name DEO2
 
+	( print loop )
 	&loop
 		#00 .buf-size-expect LDZ .File/length DEO2
 		( ;buf Mprint-short #00 .buf Mprint-short Mendl )
@@ -142,7 +151,7 @@ BRK
 		( call subroutine )
 		.buf-on-read LDZ2 JSR2
 
-		.buf-on-read LDZ2 ;after-end NEQ2 
+		.buf-on-read LDZ2 ;after-end NEQ2
 	?&loop
 BRK
 
@@ -189,33 +198,28 @@ JMP2r
 
 	
 ( farbfeld uses 16-bit depth, not alpha-premultiplied ) 
-( we discard the lower 12 bits )
+( we discard the lower 10 bits )
 ( use 4 bits directly, if alpha is not present )
 ( or, multiply 2 bit color with 2 bit alpha to get 4 bits )
 @ff-get-next-color ( -- r g b )
 	( 255 INC becomes 0, so lambda isn't skipped -> opaque )
 	.buf/ff-a LDZ DUP INC ?{
 		POP
-		.buf/ff-r LDZ ( #04 SFT )
-		.buf/ff-g LDZ ( #04 SFT )
-		.buf/ff-b LDZ ( #04 SFT )
+		( LIT "# Mcout )
+		.buf/ff-r LDZ #04 SFT
+		( DUP print-byte )
+		.buf/ff-g LDZ #04 SFT
+		( DUP print-byte )
+		.buf/ff-b LDZ #04 SFT
+		( DUP print-byte )
+		( LIT "< Mcout )
+		( .buf/ff-b LDZ .buf/ff-g LDZ .buf/ff-r LDZ Mprint-bgr )
 	JMP2r 
 	}
 	#06 SFT 
 	DUP .buf/ff-r LDZ #06 SFT MUL
 	DUP .buf/ff-g LDZ #06 SFT MUL
 	DUP .buf/ff-b LDZ #06 SFT MUL
-JMP2r
-
-
-@ff-print ( -- )
-	ff-get-next-color
-	;color/r STA ;color/g STA ;color/b STA
-	pick-color .Screen/pixel DEO
-	move-print-pos ?{
-		;str/end print-str 
-		;after-end .buf-on-read STZ2
-	}
 JMP2r
 
 
@@ -272,78 +276,117 @@ JMP2r
 ( image processing )
 
 
+@scan-colors-first
+		
+JMP2r
+
+@avgcolor [ &r &g &b ]
+
+@scan-colors
+
 
 
 ( printing )
 
 
+@ff-print ( -- )
+	ff-get-next-color
+	;color/b STA ;color/g STA ;color/r STA
+	pick-color .Screen/pixel DEO
+	move-print-pos ?{
+		;str/end print-str 
+		;after-end .buf-on-read STZ2
+	}
+JMP2r
+
+
 ( probably overkill )
 @prepare-palette
-	;color0/r LDA DUP ;color0r STA #f0 AND 
-	;color1/r LDA DUP ;color1r STA #04 SFT ORA ,&rhigh STR
-	;color2/r LDA DUP ;color2r STA #f0 AND 
-	;color3/r LDA DUP ;color3r STA #04 SFT ORA ,&rlow STR
-	;color0/g LDA DUP ;color0g STA #f0 AND 
-	;color1/g LDA DUP ;color1g STA #04 SFT ORA ,&ghigh STR
-	;color2/g LDA DUP ;color2g STA #f0 AND 
-	;color3/g LDA DUP ;color3g STA #04 SFT ORA ,&glow STR
+	LIT "0 Mcout
+	;color0/b LDA ;color0/g LDA ;color0/r LDA Mprint-bgr
+	LIT "1 Mcout
+	;color1/b LDA ;color1/g LDA ;color1/r LDA Mprint-bgr
+	LIT "2 Mcout
+	;color2/b LDA ;color2/g LDA ;color2/r LDA Mprint-bgr
+	LIT "3 Mcout
+	;color3/b LDA ;color3/g LDA ;color3/r LDA Mprint-bgr
+	LIT "E Mendl
+	;color0/r LDA DUP ;color0r STA #40 SFT 
+	;color1/r LDA DUP ;color1r STA ORA [ ,&rhigh STR ]
+	;color2/r LDA DUP ;color2r STA #40 SFT
+	;color3/r LDA DUP ;color3r STA ORA [ ,&rlow STR ]
+	;color0/g LDA DUP ;color0g STA #40 SFT 
+	;color1/g LDA DUP ;color1g STA ORA [ ,&ghigh STR ]
+	;color2/g LDA DUP ;color2g STA #40 SFT
+	;color3/g LDA DUP ;color3g STA ORA [ ,&glow STR ]
 	!{
 		&r &rhigh 00 &rlow 00
 		&g &ghigh 00 &glow 00
 		&b &bhigh 00 &blow 00
 	}
-	;color0/b LDA DUP ;color0b STA #f0 AND 
-	;color1/b LDA DUP ;color1b STA #04 SFT ORA ,&bhigh STR
-	;color2/b LDA DUP ;color2b STA #f0 AND 
-	;color3/b LDA DUP ;color3b STA #04 SFT ORA ,&blow STR
+	;color0/b LDA DUP ;color0b STA #40 SFT 
+	;color1/b LDA DUP ;color1b STA ORA [ ,&bhigh STR ]
+	;color2/b LDA DUP ;color2b STA #40 SFT
+	;color3/b LDA DUP ;color3b STA ORA [ ,&blow STR ]
 
-	,&r LDR2 .System/r DEO2
-	,&g LDR2 .System/g DEO2
-	,&b LDR2 .System/b DEO2
+	LIT "R Mcout [ ,&r LDR2 ] Mprint-short
+	LIT "G Mcout [ ,&g LDR2 ] Mprint-short
+	LIT "B Mcout [ ,&b LDR2 ] Mprint-short
+	Mendl
+
+	[ ,&r LDR2 ] .System/r DEO2
+	[ ,&g LDR2 ] .System/g DEO2
+	[ ,&b LDR2 ] .System/b DEO2
 JMP2r
 
 
 ( chooses closest color from palette )
 @pick-color ( -- c )
-	#00 [ ,color/r LDR ] [ LIT @color0r $1 ] GTHk ?{ SWP } SUB
-	#00 [ ,color/g LDR ] [ LIT @color0g $1 ] GTHk ?{ SWP } SUB ADD2
-	#00 [ ,color/b LDR ] [ LIT @color0b $1 ] GTHk ?{ SWP } SUB ADD2
-	,color/mindist STR2 #00 ,color/mindistcol STR
+	( LIT "0 Mcout )
+	( ;color0/r LDA ;color0/g LDA ;color0/b LDA Mprint-bgr )
+	( LIT "1 Mcout )
+	( ;color1/r LDA ;color1/g LDA ;color1/b LDA Mprint-bgr )
+	( LIT "2 Mcout )
+	( ;color2/r LDA ;color2/g LDA ;color2/b LDA Mprint-bgr )
+	( LIT "3 Mcout )
+	( ;color3/r LDA ;color3/g LDA ;color3/b LDA Mprint-bgr )
+	( LIT "o Mcout )
+	( ,color/b LDR ,color/g LDR ,color/r LDR Mprint-bgr )
+	#00
+	( wst: min-dist-color min-dist cur-dist.. )
+	[ ,color/r LDR ] [ LIT @color0r $1 ] GTHk ?{ SWP } SUB
+	[ ,color/g LDR ] [ LIT @color0g $1 ] GTHk ?{ SWP } SUB ADD
+	[ ,color/b LDR ] [ LIT @color0b $1 ] GTHk ?{ SWP } SUB ADD
 	
-	#0000
-	#00 [ ,color/r LDR ] [ LIT @color1r $1 ] GTHk ?{ SWP } SUB
-	#00 [ ,color/g LDR ] [ LIT @color1g $1 ] GTHk ?{ SWP } SUB ADD2
-	#00 [ ,color/b LDR ] [ LIT @color1b $1 ] GTHk ?{ SWP } SUB ADD2
-	DUP2 ,color/mindist LDR2 GTH2 
-	?{ DUP2 ,color/mindist STR2 #01 ,color/mindistcol STR } POP2
+	[ ,color/r LDR ] [ LIT @color1r $1 ] GTHk ?{ SWP } SUB
+	[ ,color/g LDR ] [ LIT @color1g $1 ] GTHk ?{ SWP } SUB ADD
+	[ ,color/b LDR ] [ LIT @color1b $1 ] GTHk ?{ SWP } SUB ADD
+	LTHk ?{ NIP NIP #01 SWP !color-2-check } POP
 	
-	!{
-		@color [ 
-			&r 00 &g 00 &b 00 &mindist ffff &mindistcol 00 
-		]
-	}
-	#0000
-	#00 [ ,color/r LDR ] [ LIT @color2r $1 ] GTHk ?{ SWP } SUB
-	#00 [ ,color/g LDR ] [ LIT @color2g $1 ] GTHk ?{ SWP } SUB ADD2
-	#00 [ ,color/b LDR ] [ LIT @color2b $1 ] GTHk ?{ SWP } SUB ADD2
-	DUP2 ,color/mindist LDR2 GTH2 
-	?{ DUP2 ,color/mindist STR2 #02 ,color/mindistcol STR } POP2
-	
-	#0000
-	#00 [ ,color/r LDR ] [ LIT @color3r $1 ] GTHk ?{ SWP } SUB
-	#00 [ ,color/g LDR ] [ LIT @color3g $1 ] GTHk ?{ SWP } SUB ADD2
-	#00 [ ,color/b LDR ] [ LIT @color3b $1 ] GTHk ?{ SWP } SUB ADD2
-	DUP2 ,color/mindist LDR2 GTH2 
-	?{ DUP2 ,color/mindist STR2 #03 ,color/mindistcol STR } POP2
+	!{ @color [ &r 00 &g 00 &b 00 ] }
 
-	;color/mindistcol LDA
+	@color-2-check
+	[ ,color/r LDR ] [ LIT @color2r $1 ] GTHk ?{ SWP } SUB
+	[ ,color/g LDR ] [ LIT @color2g $1 ] GTHk ?{ SWP } SUB ADD
+	[ ,color/b LDR ] [ LIT @color2b $1 ] GTHk ?{ SWP } SUB ADD
+	LTHk ?{ NIP NIP #02 SWP !color-3-check } POP
+	
+	@color-3-check
+	[ ,color/r LDR ] [ LIT @color3r $1 ] GTHk ?{ SWP } SUB
+	[ ,color/g LDR ] [ LIT @color3g $1 ] GTHk ?{ SWP } SUB ADD
+	[ ,color/b LDR ] [ LIT @color3b $1 ] GTHk ?{ SWP } SUB ADD
+	LTH ?{ POP #03 }
+
+	( LIT "= Mcout DUP print-byte Mendl )
 JMP2r
 
 
 @move-print-pos ( -- continue )
-	( .Screen/x DEI2 Mprint-short )
-	( .Screen/y DEI2 Mprint-short )
-	( LIT "E .Console/write DEO )
+	( .Screen/x DEI2 #0100 NEQ2 ?{ )
+	( 	.Screen/y DEI2 #0180 NEQ2 ?{ )
+	( 		#00  )
+	( 	JMP2r } )
+	( } )
 	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
 		#0000 .Screen/x DEO2 
 		.Screen/y DEI2 INC2 
@@ -431,8 +474,12 @@ BRK
 	sprites: #1d80-#1ddd
 	         0x0080 = 128 bytes total
 		 128 * 4 = 512 pixels per line )
-|1000 @lines-smol    @filename
+|1000 @lines-smol    !fail ( upper limit for smol code )
 |1d80 @sprite-smol
+
+
+|1e00 @filename
+
 
 ( big, is 8x smol
 	lines:   #8000-#ec00
