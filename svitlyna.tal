@@ -16,15 +16,14 @@
 ]
 
 |0000 
-@img-w $2 @img-h $2 
+@x $2 @y $2
+@img-w $2 @img-h $2
 
 ( see bottom of file for reasoning )
 %Mmax-w-smol { #0200 }
 %Mmax-w-big { #1000 }
 
-( boolean options, could be compressed to bit fields if needed )
-@no-fullscreen $1
-@streaming $1
+%Mmax-name-length { #00ff }
 
 @color0 [ &r $1 &g $1 &b $1 ]
 @color1 [ &r $1 &g $1 &b $1 ]
@@ -37,7 +36,7 @@
 	&ff-w-high &ff-r     $2
 	&ff-w-low  &ff-g     $2     
 	&ff-h-high &ff-b     $2
-	&ff-h-low  &ff-a     $2
+	&ff-h-low  &ff-a     $10
 ]
 @buf-size-expect $1 @buf-on-read $2
 %Mbuf-next { .buf-on-read STZ2 .buf-size-expect STZ }
@@ -122,7 +121,12 @@ BRK
 	}
 	.Console/read DEI 
 	[ ,&name-length LDR2 ] ;filename ADD2 STA
-	[ ,&name-length LDR2 ] INC2 [ ,&name-length STR2 ]
+	[ ,&name-length LDR2 ] INC2 
+	DUP2 Mmax-name-length LTH2 ?{
+		;str/filename-big !fail-str
+	}
+
+	[ ,&name-length STR2 ]
 BRK 
 	&name-length 0000
 
@@ -193,7 +197,7 @@ JMP2r
 
 	handle-image-size
 
-	#08 ;ff-print Mbuf-next
+	#08 ;ff-divide-colors Mbuf-next
 JMP2r
 
 	
@@ -232,25 +236,22 @@ JMP2r
 	;str/height print-str DUP2 Mprint-short Mendl
 
 	DUP2k .Screen/height DEO2 .img-h STZ2
-	;str/height print-str DUP2 Mprint-short Mendl
-	;str/height print-str .Screen/height DEI2 Mprint-short Mendl
 	.Screen/height DEI2 EQU2 ?{
-		;str/height print-str .Screen/height DEI2 
-		Mprint-short Mendl
-		#01 .no-fullscreen STZ
+		( ;str/height print-str .Screen/height DEI2  )
+		( Mprint-short Mendl )
+		( #01 .no-fullscreen STZ )
 	}
 
 	;str/width print-str DUP2 Mprint-short Mendl
 
 	DUP2 Mmax-w-big LTH2 ?{ !too-large }
 	DUP2k .Screen/width DEO2 .img-w STZ2
-	;str/width print-str .Screen/width DEI2 Mprint-short Mendl
 	.Screen/width DEI2 EQU2 ?{
-		;str/width print-str .Screen/width DEI2 
-		Mprint-short Mendl
-		#01 .no-fullscreen STZ
+		( ;str/width print-str .Screen/width DEI2  )
+		( Mprint-short Mendl )
+		( #01 .no-fullscreen STZ )
 	}
-	.no-fullscreen LDZ #00 EQU ?{ ;str/cannot-fullscreen !fail-str }
+	( .no-fullscreen LDZ #00 EQU ?{ ;str/cannot-fullscreen !fail-str } )
 
 	( Mmax-w-smol LTH2 ?{ 
 		( memory check )
@@ -275,14 +276,120 @@ JMP2r
 
 ( image processing )
 
+( dividing color space into 256 regions )
+( rrrgggbb )
+@ff-divide-colors ( -- )
+	( #01 .System/debug DEO )
+	LIT "h .Console/write DEO
+	ff-get-next-color
+	Mprint-bgr
+	ff-get-next-color
+	#01 SFT ( blue )
+	DUP print-byte Mendl
+	SWP #21 SFT ( green ) ORA
+	DUP print-byte Mendl
+	SWP #51 SFT ( red ) ORA
+	DUP print-byte Mendl
+	#00 SWP ;quantization-buckets ADD2 DUP2 LDA INC STA
 
-@scan-colors-first
-		
+	advance-pos ?{
+		( finished; count most popular colors )
+		&loop
+			[ LIT2 &addr ;quantization-buckets ] LDA
+			( wst: 2nd 1st cur | rst: 4th 3rd )
+			GTHk ?{ NIPr ROT STH !&next }
+			ROT 
+			( wst: 1st cur 2nd | rst: 4th 3rd )
+			LTHk ?{ NIPr STH SWP !&next } 
+			SWP STHr
+			( wst: 1st 2nd cur 3rd | rst: 4th )
+			LTHk ?{ POPr STH STH SWP !&next }
+			SWP STHr
+			( wst: 1st 2nd 3rd cur 4th | rst: )
+			LTHk ?{ POP STH STH SWP !&next }
+			STH POP STH SWP
+
+			&next 
+				[ ,&addr ] LDR2 INC2 DUP2
+				;quantization-buckets-end 
+				NEQ ?{
+					POP2
+					!&loop-end 
+				}
+				[ ,&addr ] STR2
+				!&loop
+		&loop-end
+		( got colors! )
+		DUP #03 AND .color0/b STZ #02 SFT 
+		DUP #07 AND .color0/g STZ #02 SFT 
+		.color0/g STZ
+		DUP #03 AND .color1/b STZ #02 SFT 
+		DUP #07 AND .color1/g STZ #02 SFT 
+		.color1/g STZ
+		STHr
+		DUP #03 AND .color2/b STZ #02 SFT 
+		DUP #07 AND .color2/g STZ #02 SFT 
+		.color2/g STZ
+		STHr
+		DUP #03 AND .color3/b STZ #02 SFT 
+		DUP #07 AND .color3/g STZ #02 SFT 
+		.color3/g STZ
+		;str/divided-colors print-str
+		prepare-palette
+
+
+		#16 ;ff-print-init Mbuf-next
+		( reset file )
+		;filename .File/name DEO2
+	}
 JMP2r
 
-@avgcolor [ &r &g &b ]
 
-@scan-colors
+( this just skips the file header by having requested 16 bytes )
+@ff-print-init ( -- )
+	( now we will read 8 bytes as normal )
+	#08 ;ff-print Mbuf-next
+	#0000 .Screen/x DEO2 #0000 .Screen/y DEO2
+JMP2r
+
+
+( @ff-max-channel-variation ( -- ) )
+( 	ff-get-next-color )
+( 	DUP )
+( 	[ ,&bmax LDR ] LTHk ?{ OVR [ ,&bmax STR ] } POP2 )
+( 	[ ,&bmin LDR ] GTHk ?{ OVR [ ,&bmin STR ] } POP2 )
+( 	DUP )
+( 	[ ,&gmax LDR ] LTHk ?{ OVR [ ,&gmax STR ] } POP2 )
+( 	[ ,&gmin LDR ] GTHk ?{ OVR [ ,&gmin STR ] } POP2 )
+( 	DUP )
+( 	[ ,&rmax LDR ] LTHk ?{ OVR [ ,&rmax STR ] } POP2 )
+( 	[ ,&rmin LDR ] GTHk ?{ OVR [ ,&rmin STR ] } POP2 )
+( 	move-print-pos ?{ )
+( 		 )
+( 	} )
+( JMP2r )
+( 	[ &rmin ff &rmax 00 &gmin ff &gmax 00 &bmin ff &bmax 00 ] )
+
+
+
+( @ff-avg-color-init ( -- ) )
+( 	ff-get-next-color )
+( 	[ ,avgcolor/b STR ] [ ,avgcolor/g STR ] [ ,avgcolor/r STR ] )
+( 	#08 ;ff-avg-color Mbuf-next )
+( 	#01 [ ,cumulative-avg/n STR ] )
+( JMP2r )
+
+( @cumulative-avg [ &r 00 &g 00 &b 00 &n 00 ] )
+
+( @ff-avg-color ( -- ) )
+( 	ff-get-next-color )
+( 	[ ,cumulative-avg/b LDR ] SUBk [ ,cumulative-avg/n ] DIV  )
+( 	ADD NIP )
+( 	[ ,cumulative-avg/g LDR ] SUBk [ ,cumulative-avg/n ] DIV  )
+( 	ADD NIP )
+( 	[ ,cumulative-avg/r LDR ] SUBk [ ,cumulative-avg/n ] DIV  )
+( 	ADD NIP )
+( JMP2r )
 
 
 
@@ -293,7 +400,7 @@ JMP2r
 	ff-get-next-color
 	;color/b STA ;color/g STA ;color/r STA
 	pick-color .Screen/pixel DEO
-	move-print-pos ?{
+	advance-pos-screen ?{
 		;str/end print-str 
 		;after-end .buf-on-read STZ2
 	}
@@ -310,7 +417,6 @@ JMP2r
 	;color2/b LDA ;color2/g LDA ;color2/r LDA Mprint-bgr
 	LIT "3 Mcout
 	;color3/b LDA ;color3/g LDA ;color3/r LDA Mprint-bgr
-	LIT "E Mendl
 	;color0/r LDA DUP ;color0r STA #40 SFT 
 	;color1/r LDA DUP ;color1r STA ORA [ ,&rhigh STR ]
 	;color2/r LDA DUP ;color2r STA #40 SFT
@@ -381,12 +487,22 @@ JMP2r
 JMP2r
 
 
-@move-print-pos ( -- continue )
-	( .Screen/x DEI2 #0100 NEQ2 ?{ )
-	( 	.Screen/y DEI2 #0180 NEQ2 ?{ )
-	( 		#00  )
-	( 	JMP2r } )
-	( } )
+@advance-pos ( -- continue )
+	LIT "x Mcout .x LDZ2 Mprint-short
+	LIT "y Mcout .y LDZ2 Mprint-short Mendl
+	.x LDZ2 INC2 .img-w LDZ2 NEQ2k ?{
+		POP2 POP2 #0000 STZ2
+		.y LDZ2 INC2
+		DUP2 .y STZ2
+		.img-h LDZ2 NEQ2
+	JMP2r }
+	POP2 .x STZ2
+	#01
+JMP2r
+
+
+( assumes screen auto )
+@advance-pos-screen ( -- continue )
 	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
 		#0000 .Screen/x DEO2 
 		.Screen/y DEI2 INC2 
@@ -456,11 +572,13 @@ BRK
 	&start-stdin "standard 20 "input... 0a 00
 	&end "Готово! 0a 00
 	&usage "Usage: 20 "svitlyna.rom 20 "image.ff 0a 00
-	&cannot-fullscreen "Unable 20 "to 20 "resize 20 "screen 0a 00
+	&cannot-fullscreen "Unable 20 "to 20 "resize 20 "screen. 0a 00
 	&width "w: 20 00
 	&height "h: 20 00
 	&after-end "Warning: 20 
-	           "input 20 "after 20 "image 20 "end 0a 00
+	           "input 20 "after 20 "image 20 "end. 0a 00
+	&filename-big "File 20 "name 20 "too 20 "big. 0a 00
+	&divided-colors "Divided 20 "colors. 0a 00
 ]
 
 
@@ -479,6 +597,9 @@ BRK
 
 
 |1e00 @filename
+
+
+|1f00 @quantization-buckets
 
 
 ( big, is 8x smol
