@@ -206,7 +206,8 @@ JMP2r
 
 	handle-image-size
 
-	#08 ;ff-max-channel-variation Mbuf-next
+	ff-partition0/init
+	#08 ;ff-palette-split0 Mbuf-next
 JMP2r
 
 	
@@ -286,30 +287,200 @@ JMP2r
 ( image processing )
 
 
-@ff-max-channel-variation ( -- )
+@ff-palette-split0 ( -- )
 	ff-get-next-color
+
+	ff-partition0/process-var
+		
+	advance-pos ?{ 
+		ff-partition0/split-chan
+		;ff-partition0/max-var-chan LDA #01 NEQ ?{
+			;ff-partition0/r-start LDA
+			;ff-partition0/max-var LDA #01 SFT
+			ADD DUP ;ff-partition0/r-end STA
+			;ff-partition1/r-start STA
+		}
+		;ff-partition0/max-var-chan LDA #02 NEQ ?{
+			;ff-partition0/g-start LDA
+			;ff-partition0/max-var LDA #01 SFT
+			ADD DUP ;ff-partition0/g-end STA
+			;ff-partition1/g-start STA
+		}
+		;ff-partition0/max-var-chan LDA #03 NEQ ?{
+			;ff-partition0/b-start LDA
+			;ff-partition0/max-var LDA #01 SFT
+			ADD DUP ;ff-partition0/b-end STA
+			;ff-partition1/b-start STA
+		}
+		ff-partition0/debug
+		ff-partition1/debug
+
+		BRK
+	}
+JMP2r
+
+
+@ff-partition0
+&debug 
+	LIT "0 Mcout
+	LIT "B Mcout LIT "R Mcout ;&r-start LDA2 Mprint-short
+	LIT "B Mcout LIT "G Mcout ;&g-start LDA2 Mprint-short
+	LIT "B Mcout LIT "B Mcout ;&b-start LDA2 Mprint-short
+	LIT "V Mcout LIT "R Mcout ;&rmin LDA2 Mprint-short
+	LIT "V Mcout LIT "G Mcout ;&gmin LDA2 Mprint-short
+	LIT "V Mcout LIT "B Mcout ;&bmin LDA2 Mprint-short Mendl
+JMP2r
+&init
+	#ff00 DUP2k ;&rmin STA2 ;&gmin STA2 ;&bmin STA2
+JMP2r
+( get color variation within partition )
+&process-var ( r g b -- )
 	[ ,&bmax LDR ] LTHk ?{ SWP DUP [ ,&bmax STR ] SWP } POP
 	[ ,&bmin LDR ] GTHk ?{ SWP DUP [ ,&bmin STR ] SWP } POP2
 	[ ,&gmax LDR ] LTHk ?{ SWP DUP [ ,&gmax STR ] SWP } POP
 	[ ,&gmin LDR ] GTHk ?{ SWP DUP [ ,&gmin STR ] SWP } POP2
 	[ ,&rmax LDR ] LTHk ?{ SWP DUP [ ,&rmax STR ] SWP } POP
 	[ ,&rmin LDR ] GTHk ?{ SWP DUP [ ,&rmin STR ] SWP } POP2
-	advance-pos ?{
-		!{ 
-			&rmin ff &rmax 00 
-			&gmin ff &gmax 00 
-			&bmin ff &bmax 00 
-		}
-		LIT "R Mcout [ ;&rmax LDA ] print-byte
-		LIT "r Mcout [ ;&rmin LDA ] print-byte
-		LIT "G Mcout [ ;&gmax LDA ] print-byte
-		LIT "g Mcout [ ;&gmin LDA ] print-byte
-		LIT "B Mcout [ ;&bmax LDA ] print-byte
-		LIT "b Mcout [ ;&bmin LDA ] print-byte
-		#80 .System/state DEO BRK
-	}
-	Mendl
+JMP2r 
+[ 
+	( boundaries of partition )
+	&r-start 00 &r-end ff
+	&g-start 00 &g-end ff
+	&b-start 00 &b-end ff
+	( variation of actual pixels within )
+	&rmin 00 &rmax 00 
+	&gmin 00 &gmax 00 
+	&bmin 00 &bmax 00 
+	&max-var-chan 00 ( 01 = r, 02 = g, 03 = b )
+	&max-var 00
+]
+&split-chan ( -- )
+		[ ,&rmax LDR ] [ ,&rmin LDR ] SUB
+		DUP [ ,&max-var STR ] #01 [ ,&max-var-chan STR ]
+		[ ,&bmax LDR ] [ ,&bmin LDR ] SUB
+		GTHk ?{ 
+			DUP [ ,&max-var STR ]
+			#03 [ ,&max-var-chan STR ] SWP 
+		} POP 
+		[ ,&gmax LDR ] [ ,&gmin LDR ] SUB 
+		GTHk ?{ 
+			DUP [ ,&max-var STR ]
+			#02 [ ,&max-var-chan STR ] 
+		} POP2
 JMP2r
+
+
+@ff-partition1 ( r g b -- )
+&debug 
+	LIT "0 Mcout
+	LIT "B Mcout LIT "R Mcout ;&r-start LDA2 Mprint-short
+	LIT "B Mcout LIT "G Mcout ;&g-start LDA2 Mprint-short
+	LIT "B Mcout LIT "B Mcout ;&b-start LDA2 Mprint-short
+	LIT "V Mcout LIT "R Mcout ;&rmin LDA2 Mprint-short
+	LIT "V Mcout LIT "G Mcout ;&gmin LDA2 Mprint-short
+	LIT "V Mcout LIT "B Mcout ;&bmin LDA2 Mprint-short Mendl
+JMP2r
+&init
+	#ff00 DUP2k ;&rmin STA2 ;&gmin STA2 ;&bmin STA2
+JMP2r
+&process-var ( r g b -- )
+	[ ,&bmax LDR ] LTHk ?{ SWP DUP [ ,&bmax STR ] SWP } POP
+	[ ,&bmin LDR ] GTHk ?{ SWP DUP [ ,&bmin STR ] SWP } POP2
+	[ ,&gmax LDR ] LTHk ?{ SWP DUP [ ,&gmax STR ] SWP } POP
+	[ ,&gmin LDR ] GTHk ?{ SWP DUP [ ,&gmin STR ] SWP } POP2
+	[ ,&rmax LDR ] LTHk ?{ SWP DUP [ ,&rmax STR ] SWP } POP
+	[ ,&rmin LDR ] GTHk ?{ SWP DUP [ ,&rmin STR ] SWP } POP2
+JMP2r 
+[ 
+	( boundaries of partition )
+	&r-start 00 &r-end ff
+	&g-start 00 &g-end ff
+	&b-start 00 &b-end ff
+	( variation of actual pixels within )
+	&rmin 00 &rmax 00 
+	&gmin 00 &gmax 00 
+	&bmin 00 &bmax 00 
+	&max-var-chan 00 ( 01 = r, 02 = g, 03 = b )
+	&max-var 00
+]
+&split-chan ( -- )
+		[ ,&rmax LDR ] [ ,&rmin LDR ] SUB
+		DUP [ ,&max-var STR ] #01 [ ,&max-var-chan STR ]
+		[ ,&bmax LDR ] [ ,&bmin LDR ] SUB
+		GTHk ?{ 
+			DUP [ ,&max-var STR ]
+			#03 [ ,&max-var-chan STR ] SWP 
+		} POP 
+		[ ,&gmax LDR ] [ ,&gmin LDR ] SUB 
+		GTHk ?{ 
+			DUP [ ,&max-var STR ]
+			#02 [ ,&max-var-chan STR ] 
+		} POP2
+JMP2r
+
+
+@ff-partition2 ( r g b -- )
+&debug 
+	LIT "0 Mcout
+	LIT "B Mcout LIT "R Mcout ;&r-start LDA2 Mprint-short
+	LIT "B Mcout LIT "G Mcout ;&g-start LDA2 Mprint-short
+	LIT "B Mcout LIT "B Mcout ;&b-start LDA2 Mprint-short
+	LIT "V Mcout LIT "R Mcout ;&rmin LDA2 Mprint-short
+	LIT "V Mcout LIT "G Mcout ;&gmin LDA2 Mprint-short
+	LIT "V Mcout LIT "B Mcout ;&bmin LDA2 Mprint-short Mendl
+JMP2r
+&init
+	#ff00 DUP2k ;&rmin STA2 ;&gmin STA2 ;&bmin STA2
+JMP2r
+&process-var ( r g b -- )
+	[ ,&bmax LDR ] LTHk ?{ SWP DUP [ ,&bmax STR ] SWP } POP
+	[ ,&bmin LDR ] GTHk ?{ SWP DUP [ ,&bmin STR ] SWP } POP2
+	[ ,&gmax LDR ] LTHk ?{ SWP DUP [ ,&gmax STR ] SWP } POP
+	[ ,&gmin LDR ] GTHk ?{ SWP DUP [ ,&gmin STR ] SWP } POP2
+	[ ,&rmax LDR ] LTHk ?{ SWP DUP [ ,&rmax STR ] SWP } POP
+	[ ,&rmin LDR ] GTHk ?{ SWP DUP [ ,&rmin STR ] SWP } POP2
+JMP2r 
+[ 
+	( boundaries of partition )
+	&r-start 00 &r-end ff
+	&g-start 00 &g-end ff
+	&b-start 00 &b-end ff
+	( variation of actual pixels within )
+	&rmin 00 &rmax 00 
+	&gmin 00 &gmax 00 
+	&bmin 00 &bmax 00 
+	&max-var-chan 00 ( 01 = r, 02 = g, 03 = b )
+	&max-var 00
+]
+&split-chan ( -- )
+		[ ,&rmax LDR ] [ ,&rmin LDR ] SUB
+		DUP [ ,&max-var STR ] #01 [ ,&max-var-chan STR ]
+		[ ,&bmax LDR ] [ ,&bmin LDR ] SUB
+		GTHk ?{ 
+			DUP [ ,&max-var STR ]
+			#03 [ ,&max-var-chan STR ] SWP 
+		} POP 
+		[ ,&gmax LDR ] [ ,&gmin LDR ] SUB 
+		GTHk ?{ 
+			DUP [ ,&max-var STR ]
+			#02 [ ,&max-var-chan STR ] 
+		} POP2
+JMP2r
+
+
+@ff-partition3 ( r g b -- )
+&debug 
+	LIT "0 Mcout
+	LIT "B Mcout LIT "R Mcout ;&r-start LDA2 Mprint-short
+	LIT "B Mcout LIT "G Mcout ;&g-start LDA2 Mprint-short
+	LIT "B Mcout LIT "B Mcout ;&b-start LDA2 Mprint-short Mendl
+JMP2r
+[ 
+	( boundaries of partition )
+	&r-start 00 &r-end ff
+	&g-start 00 &g-end ff
+	&b-start 00 &b-end ff
+]
 
 
 ( @ff-avg-color-init ( -- ) )
@@ -537,9 +708,6 @@ BRK
 
 
 |1e00 @filename
-
-
-|1f00 @quantization-buckets
 
 
 ( big, is 8x smol
