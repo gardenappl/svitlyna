@@ -44,7 +44,16 @@
 %Mprint-short { SWP print-byte print-byte }
 %Mcout { .Console/write DEO }
 %Mendl { #0a .Console/write DEO }
-%Mprint-bgr { LIT "# Mcout print-byte print-byte print-byte Mendl }
+%Mprint-bgr { 
+	LIT "# Mcout 
+	print-byte print-byte print-byte Mendl 
+}
+%Mprint-rgb { 
+	LIT "# Mcout 
+	STH OVR print-byte 
+	DUP print-byte
+	STHr DUP print-byte Mendl
+}
 %Mdump-buffer {
 	#00
 	&dump-buffer-loop 
@@ -197,7 +206,7 @@ JMP2r
 
 	handle-image-size
 
-	#08 ;ff-divide-colors Mbuf-next
+	#08 ;ff-max-channel-variation Mbuf-next
 JMP2r
 
 	
@@ -276,100 +285,31 @@ JMP2r
 
 ( image processing )
 
-( dividing color space into 256 regions )
-( rrrgggbb )
-@ff-divide-colors ( -- )
-	( #01 .System/debug DEO )
-	LIT "h .Console/write DEO
-	ff-get-next-color
-	Mprint-bgr
-	ff-get-next-color
-	#01 SFT ( blue )
-	DUP print-byte Mendl
-	SWP #21 SFT ( green ) ORA
-	DUP print-byte Mendl
-	SWP #51 SFT ( red ) ORA
-	DUP print-byte Mendl
-	#00 SWP ;quantization-buckets ADD2 DUP2 LDA INC STA
 
+@ff-max-channel-variation ( -- )
+	ff-get-next-color
+	[ ,&bmax LDR ] LTHk ?{ SWP DUP [ ,&bmax STR ] SWP } POP
+	[ ,&bmin LDR ] GTHk ?{ SWP DUP [ ,&bmin STR ] SWP } POP2
+	[ ,&gmax LDR ] LTHk ?{ SWP DUP [ ,&gmax STR ] SWP } POP
+	[ ,&gmin LDR ] GTHk ?{ SWP DUP [ ,&gmin STR ] SWP } POP2
+	[ ,&rmax LDR ] LTHk ?{ SWP DUP [ ,&rmax STR ] SWP } POP
+	[ ,&rmin LDR ] GTHk ?{ SWP DUP [ ,&rmin STR ] SWP } POP2
 	advance-pos ?{
-		( finished; count most popular colors )
-		&loop
-			[ LIT2 &addr ;quantization-buckets ] LDA
-			( wst: 2nd 1st cur | rst: 4th 3rd )
-			GTHk ?{ NIPr ROT STH !&next }
-			ROT 
-			( wst: 1st cur 2nd | rst: 4th 3rd )
-			LTHk ?{ NIPr STH SWP !&next } 
-			SWP STHr
-			( wst: 1st 2nd cur 3rd | rst: 4th )
-			LTHk ?{ POPr STH STH SWP !&next }
-			SWP STHr
-			( wst: 1st 2nd 3rd cur 4th | rst: )
-			LTHk ?{ POP STH STH SWP !&next }
-			STH POP STH SWP
-
-			&next 
-				[ ,&addr ] LDR2 INC2 DUP2
-				;quantization-buckets-end 
-				NEQ ?{
-					POP2
-					!&loop-end 
-				}
-				[ ,&addr ] STR2
-				!&loop
-		&loop-end
-		( got colors! )
-		DUP #03 AND .color0/b STZ #02 SFT 
-		DUP #07 AND .color0/g STZ #02 SFT 
-		.color0/g STZ
-		DUP #03 AND .color1/b STZ #02 SFT 
-		DUP #07 AND .color1/g STZ #02 SFT 
-		.color1/g STZ
-		STHr
-		DUP #03 AND .color2/b STZ #02 SFT 
-		DUP #07 AND .color2/g STZ #02 SFT 
-		.color2/g STZ
-		STHr
-		DUP #03 AND .color3/b STZ #02 SFT 
-		DUP #07 AND .color3/g STZ #02 SFT 
-		.color3/g STZ
-		;str/divided-colors print-str
-		prepare-palette
-
-
-		#16 ;ff-print-init Mbuf-next
-		( reset file )
-		;filename .File/name DEO2
+		!{ 
+			&rmin ff &rmax 00 
+			&gmin ff &gmax 00 
+			&bmin ff &bmax 00 
+		}
+		LIT "R Mcout [ ;&rmax LDA ] print-byte
+		LIT "r Mcout [ ;&rmin LDA ] print-byte
+		LIT "G Mcout [ ;&gmax LDA ] print-byte
+		LIT "g Mcout [ ;&gmin LDA ] print-byte
+		LIT "B Mcout [ ;&bmax LDA ] print-byte
+		LIT "b Mcout [ ;&bmin LDA ] print-byte
+		#80 .System/state DEO BRK
 	}
+	Mendl
 JMP2r
-
-
-( this just skips the file header by having requested 16 bytes )
-@ff-print-init ( -- )
-	( now we will read 8 bytes as normal )
-	#08 ;ff-print Mbuf-next
-	#0000 .Screen/x DEO2 #0000 .Screen/y DEO2
-JMP2r
-
-
-( @ff-max-channel-variation ( -- ) )
-( 	ff-get-next-color )
-( 	DUP )
-( 	[ ,&bmax LDR ] LTHk ?{ OVR [ ,&bmax STR ] } POP2 )
-( 	[ ,&bmin LDR ] GTHk ?{ OVR [ ,&bmin STR ] } POP2 )
-( 	DUP )
-( 	[ ,&gmax LDR ] LTHk ?{ OVR [ ,&gmax STR ] } POP2 )
-( 	[ ,&gmin LDR ] GTHk ?{ OVR [ ,&gmin STR ] } POP2 )
-( 	DUP )
-( 	[ ,&rmax LDR ] LTHk ?{ OVR [ ,&rmax STR ] } POP2 )
-( 	[ ,&rmin LDR ] GTHk ?{ OVR [ ,&rmin STR ] } POP2 )
-( 	move-print-pos ?{ )
-( 		 )
-( 	} )
-( JMP2r )
-( 	[ &rmin ff &rmax 00 &gmin ff &gmax 00 &bmin ff &bmax 00 ] )
-
 
 
 ( @ff-avg-color-init ( -- ) )
@@ -488,10 +428,10 @@ JMP2r
 
 
 @advance-pos ( -- continue )
-	LIT "x Mcout .x LDZ2 Mprint-short
-	LIT "y Mcout .y LDZ2 Mprint-short Mendl
+	( LIT "x Mcout .x LDZ2 Mprint-short )
+	( LIT "y Mcout .y LDZ2 Mprint-short Mendl )
 	.x LDZ2 INC2 .img-w LDZ2 NEQ2k ?{
-		POP2 POP2 #0000 STZ2
+		POP2 POP2 #0000 .x STZ2
 		.y LDZ2 INC2
 		DUP2 .y STZ2
 		.img-h LDZ2 NEQ2
