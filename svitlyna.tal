@@ -52,6 +52,12 @@
 %Mdebug-byte { Mcout DUP print-byte }
 %Mdebug-short { Mcout OVR print-byte DUP print-byte }
 %Mdebug32 { Mcout OVR2 Mprint-short DUP2 Mprint-short }
+%Mdebug-rgb { 
+	Mcout LIT "# Mcout 
+	ROT DUP print-byte 
+	ROT DUP print-byte
+	ROT DUP print-byte
+}
 
 %Mprint-bgr { 
 	LIT "# Mcout 
@@ -83,21 +89,6 @@
 	;str/init print-str
 
 	( hardcoded colors for now )
-	( #0f0f .color0 STZ2 #0f .color0/b STZ )
-	( #0f00 .color1 STZ2 #00 .color1/b STZ )
-	( #000f .color2 STZ2 #00 .color2/b STZ )
-	( #0000 .color3 STZ2 #0f .color3/b STZ )
-	( #0309 .color0 STZ2 #0a .color0/b STZ )
-	( #0f0e .color1 STZ2 #07 .color1/b STZ )
-	( #0f07 .color2 STZ2 #04 .color2/b STZ )
-	( #0a02 .color3 STZ2 #07 .color3/b STZ )
-	#0f0f .color0 STZ2 #0f .color0/b STZ
-	#0a0a .color1 STZ2 #0a .color1/b STZ
-	#0505 .color2 STZ2 #05 .color2/b STZ
-	#0000 .color3 STZ2 #00 .color3/b STZ
-	prepare-palette
-
-
 	#01 .Screen/auto DEO
 
 	;detect-magic #08 Mbuf-next
@@ -740,7 +731,7 @@ JMP2r
 @ff-avg-color ( {chan}* {n}* -- avg-color )
 	STH2
 	#0000 SWP2 LDA2k ( low )
-	LIT "L Mdebug32
+	LIT "L Mdebug-short
 	#0000 ROT2 INC2 INC2 LDA2 #0c lshift32 ( high )
 	LIT "H Mdebug32
 	add32
@@ -748,7 +739,7 @@ JMP2r
 
 	#0000 STH2r
 	LDA2k ( low n )
-	LIT "n Mdebug32
+	LIT "n Mdebug-short
 	#0000 ROT2 INC2 INC2 LDA2 #0c lshift32 ( high n )
 	LIT "N Mdebug32
 	add32
@@ -803,34 +794,6 @@ JMP2r
 
 
 
-
-( the start of an alternative algorithm
-  instead of recursing and only taking 2 steps,
-  we make 3 iterations and select the partition with the highest
-  variation to split. this is slower but will produce better results )
-
-( @ff-palette-split ( -- ) )
-( 	ff-get-next-color ( r g b ) )
-
-( 	;part0/b-start LDA2 ( min max ) )
-( 	ROT GTHk ?{ NIP NIP !&skip-part0 } NIP )
-( 	INC LTHk ?{ NIP #01 SUB !&skip-part0 } NIP #01 SUB )
-( 	LTHk )
-
-( 	&skip-part0 )
-( JMP2r )
-( 	&part 00 )
-
-
-( @ff-palette-split-init ( -- ) )
-( 	Mpart0 ;ff-palette-split/part STA )
-( 	Mpart0 part-init )
-( 	#08 ;ff-palette-split Mbuf-next )
-( 	ff-palette-split )
-( JMP2r )
-
-
-
 ( printing )
 
 
@@ -840,8 +803,7 @@ JMP2r
 
 
 @ff-print ( -- )
-	ff-get-next-color
-	;color/b STA ;color/g STA ;color/r STA
+	ff-get-next-color ( r g b )
 	pick-color .Screen/pixel DEO
 	advance-pos-screen ?{
 		;str/end print-str 
@@ -850,7 +812,6 @@ JMP2r
 JMP2r
 
 
-( probably overkill )
 @prepare-palette
 	LIT "0 Mcout
 	;color0/b LDA ;color0/g LDA ;color0/r LDA Mprint-bgr
@@ -860,23 +821,24 @@ JMP2r
 	;color2/b LDA ;color2/g LDA ;color2/r LDA Mprint-bgr
 	LIT "3 Mcout
 	;color3/b LDA ;color3/g LDA ;color3/r LDA Mprint-bgr
-	;color0/r LDA DUP ;color0r STA #40 SFT 
-	;color1/r LDA DUP ;color1r STA ORA [ ,&rhigh STR ]
-	;color2/r LDA DUP ;color2r STA #40 SFT
-	;color3/r LDA DUP ;color3r STA ORA [ ,&rlow STR ]
-	;color0/g LDA DUP ;color0g STA #40 SFT 
-	;color1/g LDA DUP ;color1g STA ORA [ ,&ghigh STR ]
-	;color2/g LDA DUP ;color2g STA #40 SFT
-	;color3/g LDA DUP ;color3g STA ORA [ ,&glow STR ]
+
+	;color0/r LDA DUP ;pick-color/color0r STA #40 SFT 
+	;color1/r LDA DUP ;pick-color/color1r STA ORA [ ,&rhigh STR ]
+	;color2/r LDA DUP ;pick-color/color2r STA #40 SFT
+	;color3/r LDA DUP ;pick-color/color3r STA ORA [ ,&rlow STR ]
+	;color0/g LDA DUP ;pick-color/color0g STA #40 SFT 
+	;color1/g LDA DUP ;pick-color/color1g STA ORA [ ,&ghigh STR ]
+	;color2/g LDA DUP ;pick-color/color2g STA #40 SFT
+	;color3/g LDA DUP ;pick-color/color3g STA ORA [ ,&glow STR ]
 	!{
 		&r &rhigh 00 &rlow 00
 		&g &ghigh 00 &glow 00
 		&b &bhigh 00 &blow 00
 	}
-	;color0/b LDA DUP ;color0b STA #40 SFT 
-	;color1/b LDA DUP ;color1b STA ORA [ ,&bhigh STR ]
-	;color2/b LDA DUP ;color2b STA #40 SFT
-	;color3/b LDA DUP ;color3b STA ORA [ ,&blow STR ]
+	;color0/b LDA DUP ;pick-color/color0b STA #40 SFT 
+	;color1/b LDA DUP ;pick-color/color1b STA ORA [ ,&bhigh STR ]
+	;color2/b LDA DUP ;pick-color/color2b STA #40 SFT
+	;color3/b LDA DUP ;pick-color/color3b STA ORA [ ,&blow STR ]
 
 	LIT "R Mcout [ ,&r LDR2 ] Mprint-short
 	LIT "G Mcout [ ,&g LDR2 ] Mprint-short
@@ -890,43 +852,40 @@ JMP2r
 
 
 ( chooses closest color from palette )
-@pick-color ( -- c )
-	( LIT "0 Mcout )
-	( ;color0/r LDA ;color0/g LDA ;color0/b LDA Mprint-bgr )
-	( LIT "1 Mcout )
-	( ;color1/r LDA ;color1/g LDA ;color1/b LDA Mprint-bgr )
-	( LIT "2 Mcout )
-	( ;color2/r LDA ;color2/g LDA ;color2/b LDA Mprint-bgr )
-	( LIT "3 Mcout )
-	( ;color3/r LDA ;color3/g LDA ;color3/b LDA Mprint-bgr )
-	( LIT "o Mcout )
-	( ,color/b LDR ,color/g LDR ,color/r LDR Mprint-bgr )
-	#00
-	( wst: min-dist-color min-dist cur-dist.. )
-	[ ,color/r LDR ] [ LIT @color0r $1 ] GTHk ?{ SWP } SUB
-	[ ,color/g LDR ] [ LIT @color0g $1 ] GTHk ?{ SWP } SUB ADD
-	[ ,color/b LDR ] [ LIT @color0b $1 ] GTHk ?{ SWP } SUB ADD
-	
-	[ ,color/r LDR ] [ LIT @color1r $1 ] GTHk ?{ SWP } SUB
-	[ ,color/g LDR ] [ LIT @color1g $1 ] GTHk ?{ SWP } SUB ADD
-	[ ,color/b LDR ] [ LIT @color1b $1 ] GTHk ?{ SWP } SUB ADD
-	LTHk ?{ NIP NIP #01 SWP !color-2-check } POP
-	
-	!{ @color [ &r 00 &g 00 &b 00 ] }
+@pick-color ( r g b -- c )
+	ROTk ROTk ROTk 
+	( r g b g b r b r g r g b )
+	[ LIT &color0b $1 ] GTHk ?{ SWP } SUB
+	SWP [ LIT &color0g $1 ] GTHk ?{ SWP } SUB ADD
+	SWP [ LIT &color0r $1 ] GTHk ?{ SWP } SUB ADD
+	DUP ?{ ( diff is 0 ) POP2 POP2 POP2 POP2 POP2 #00 JMP2r }
+	[ ,&diff0 STR ]
 
-	@color-2-check
-	[ ,color/r LDR ] [ LIT @color2r $1 ] GTHk ?{ SWP } SUB
-	[ ,color/g LDR ] [ LIT @color2g $1 ] GTHk ?{ SWP } SUB ADD
-	[ ,color/b LDR ] [ LIT @color2b $1 ] GTHk ?{ SWP } SUB ADD
-	LTHk ?{ NIP NIP #02 SWP !color-3-check } POP
-	
-	@color-3-check
-	[ ,color/r LDR ] [ LIT @color3r $1 ] GTHk ?{ SWP } SUB
-	[ ,color/g LDR ] [ LIT @color3g $1 ] GTHk ?{ SWP } SUB ADD
-	[ ,color/b LDR ] [ LIT @color3b $1 ] GTHk ?{ SWP } SUB ADD
-	LTH ?{ POP #03 }
+	( r g b g b r b r g )
+	[ LIT &color1g $1 ] GTHk ?{ SWP } SUB
+	SWP [ LIT &color1r $1 ] GTHk ?{ SWP } SUB ADD
+	SWP [ LIT &color1b $1 ] GTHk ?{ SWP } SUB ADD
+	DUP ?{ ( diff is 0 ) POP2 POP2 POP2 POP #01 JMP2r }
+	[ ,&diff1 STR ]
 
-	( LIT "= Mcout DUP print-byte Mendl )
+	( r g b g b r )
+	[ LIT &color2r $1 ] GTHk ?{ SWP } SUB
+	SWP [ LIT &color2b $1 ] GTHk ?{ SWP } SUB ADD
+	SWP [ LIT &color2g $1 ] GTHk ?{ SWP } SUB ADD
+	DUP ?{ ( diff is 0 ) POP2 POP2 #02 JMP2r }
+	[ ,&diff2 STR ]
+
+	( r g b )
+	[ LIT &color3b $1 ] GTHk ?{ SWP } SUB
+	SWP [ LIT &color3g $1 ] GTHk ?{ SWP } SUB ADD
+	SWP [ LIT &color3r $1 ] GTHk ?{ SWP } SUB ADD
+	DUP ?{ ( diff is 0 ) POP #03 JMP2r }
+
+	#03 SWP
+	( wst: cur-min-col cur-min )
+	[ LIT &diff0 $1 ] LTHk ?{ NIP #00 SWP ROT } POP
+	[ LIT &diff1 $1 ] LTHk ?{ NIP #01 SWP ROT } POP
+	[ LIT &diff2 $1 ] LTH ?{ POP #02 }
 JMP2r
 
 
