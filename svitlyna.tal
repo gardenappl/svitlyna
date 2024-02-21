@@ -68,14 +68,7 @@
 
 |0100
 ( init )
-	#0004 .bytes-expected STZ2
-	;test-cat .on-bytes-received STZ2
-	;test-cat-end .on-file-end STZ2
-	{ "test.txt 00 } STH2r 
-	DUP2 print-str
-	read-file
-
-	
+	( memory check )
 	#1234 ;end STA2
 	;end LDA2 #1234 EQU2 ?{ ;str/memory-error !fail }
 
@@ -88,16 +81,31 @@
 
 	#01 .Screen/auto DEO
 
-	( ;detect-magic #08 Mbuf-next )
-
-	( .Console/type DEI ?{  )
-	( 	;str/start print-str ;str/start-stdin print-str )
-	( 	;on-stdin .Console/vector DEO2  )
-	( BRK  )
-	( } )
+	.Console/type DEI ?{ 
+		( ;str/start print-str ;str/start-stdin print-str )
+		( ;on-stdin .Console/vector DEO2  )
+		!ff-palette-split0-init
+	BRK 
+	}
 
 	;read-argument .Console/vector DEO2
 BRK
+
+
+( just for testing )
+@echo-file ( {buffer}* -> )
+	LIT "( Mcout LIT "0 Mcout LIT ") Mcout
+	DUP2 LDA Mcout INC2
+	LIT "( Mcout LIT "1 Mcout LIT ") Mcout
+	DUP2 LDA Mcout INC2
+	LIT "( Mcout LIT "2 Mcout LIT ") Mcout
+	DUP2 LDA Mcout INC2
+	LIT "( Mcout LIT "3 Mcout LIT ") Mcout
+	DUP2 LDA Mcout INC2
+	LIT "( Mcout LIT "4 Mcout LIT ") Mcout
+	LDA Mcout 
+JMP2r
+
 
 
 ( @on-stdin ( -> ) )
@@ -115,23 +123,6 @@ BRK
 ( 	[ ,&index STR ] )
 ( BRK )
 
-@test-cat ( buffer* -- )
-	( LIT "( Mcout LIT "1 Mcout LIT ") Mcout )
-	LDAk .Console/write DEO
-	INC2
-	( LIT "( Mcout LIT "2 Mcout LIT ") Mcout )
-	LDAk .Console/write DEO
-	INC2
-	( LIT "( Mcout LIT "3 Mcout LIT ") Mcout )
-	LDAk .Console/write DEO
-	INC2
-	( LIT "( Mcout LIT "4 Mcout LIT ") Mcout )
-	LDA .Console/write DEO
-JMP2r
-@test-cat-end
-	LIT "! Mcout Mendl
-JMP2r
-
 
 @read-argument ( -> )
 	.Console/type DEI 
@@ -139,9 +130,10 @@ JMP2r
 		;str/usage !fail-str
 	}
 	#02 EQU ?{ 
-		#0000 .Console/vector DEO2
-		;on-read-argument .Screen/vector DEO2
-		BRK
+		#00 [ ,&name-length LDR2 ] ;filename ADD2 STA
+		Mendl
+		
+		!ff-palette-split0-init
 	}
 	.Console/read DEI 
 	[ ,&name-length LDR2 ] ;filename ADD2 STA
@@ -155,148 +147,120 @@ BRK
 	&name-length 0000
 
 
-@on-read-argument ( -> )
+@read-file ( -> )
+	;str/read print-str ;str/read-file print-str
+	;filename print-str Mendl
 	#0000 .Screen/vector DEO2
-	;str/start print-str
-	;str/start-file print-str
-	;filename print-str
-	Mendl
-	
+
+	#0008 .bytes-expected STZ2
+	;detect-magic .on-bytes-received STZ2
+	( #0005 .bytes-expected STZ2 )
+	( ;echo-file .on-bytes-received STZ2 )
 
 	;filename .File/name DEO2
+	Mfile-buffer-length .File/length DEO2
 
-	( print loop )
-	&loop
-		( #00 .buf-size-expect LDZ .File/length DEO2 )
-		( ;buf .File/read DEO2 )
-
-		( shouldn't read more than 255 bytes )
-		( .File/success DEI2 #00 .buf-size-expect LDZ  )
-		EQU2 ?{ ;str/io-error !fail-str }
-
-
-		( call subroutine )
-		( .buf-on-read LDZ2 JSR2 )
-
-		( .buf-on-read LDZ2 ;after-end NEQ2 )
-	?&loop
+	;file-buf ;read-buffer/window STA2
+	!read-buffer
 BRK
 
 
-@read-file ( {filename}* -> )
-	.File/name DEO2
-	Mfile-buffer-length .File/length DEO2
-
-	&read
-		;file-buf 
-		( DUP2 LIT "B Mdebug-short )
-		( LIT "E Mcout ;file-buf/end Mprint-short )
-		DUP2 .File/read DEO2
-		.File/success DEI2 ADD2 [ ,&window-end STR2 ]
+@read-buffer ( -> )
+	;file-buf 
+	DUP2 .File/read DEO2
+	.File/success DEI2 ADD2 [ ,&window-end STR2 ]
 
 	&loop
 		[ LIT2 &window =file-buf ] 
 		DUP2 .bytes-expected LDZ2 ADD2 ( next window )
 		[ LIT2 &window-end =file-buf/end ]
 		GTH2k ?{
-			ROT2
-			( call func )
+			POP2
+			[ ,&window STR2 ]
 			.on-bytes-received LDZ2 JSR2
-			POP2 [ ,&window STR2 ]
 			!&loop
 
 			( copy cmd )
 			&cmd [ 
-				01 0020
-				0000 =file-buf/pre-end 
+				01 0020 0000 =file-buf/pre-end 
 				0000 =file-buf-pre 
 			]
 		}
 		( not enough bytes )
 
 		;file-buf/end NEQ2 ?{
-			( LIT "N Mcout )
-			( SWP2 LIT "W Mdebug-short SWP2 )
-			( LIT "N Mdebug-short )
 			( buffer full )
 			( copy last 20 bytes to pre-buffer )
 			;&cmd .System/expansion DEO2
 			POP2
-			Mfile-buffer-length SUB2 
-			( LIT "! Mdebug-short )
-			[ ,&window STR2 ]
-			!&read
+			Mfile-buffer-length SUB2 [ ,&window STR2 ]
+			!read-buffer
 		}
-		.on-file-end LDZ2 JSR2
+		.on-file-end LDZ2 JMP2
 BRK
 
 
-( image format )
 
 
-@detect-magic ( -- )
-	LIT "m Mcout Mendl
-	#0000
+( image formats )
+
+
+@detect-magic ( {buffer}* -- )
+	STH2
+	#00
 	&loop
-		DUP2
-		;&magic ADD2 LDA #00 EQU ?&loop-end
-		DUP2 ;&magic ADD2 LDA 
-		( OVR .buf ADD LDZ )
+		#00 OVR Msk+ LDA
 		DUP .Console/write DEO 
+		OVR #00 SWP ;&magic ADD2 LDA 
+		DUP ?{ !&loop-end }
 		EQU ?{ !bad-file }
-		INC2 
+		INC
 	!&loop
 	[ &magic "farbfeld 00 ]
 	&loop-end
 
+	POP POP2r
 	Mendl 
-	( ;ff-size #08 Mbuf-next )
-	POP2 
+
+	;ff-size .on-bytes-received STZ2
+	#0008 .bytes-expected STZ2
 JMP2r
 
 
-@ff-size ( -- )
-	( .buf/ff-w-high LDZ2 #0000 EQU2 ?{ !too-large } )
-	( .buf/ff-w-low LDZ2  )
-	( .buf/ff-h-high LDZ2 #0000 EQU2 ?{ !too-large } )
-	( .buf/ff-h-low LDZ2 )
+@ff-size ( {buffer}* -- )
+	DUP2 LDA2 #0000 EQU2 ?{ !too-large } INC2 INC2
+	DUP2 LDA2 ( width ) SWP2 INC2 INC2
+	DUP2 LDA2 #0000 EQU2 ?{ !too-large } INC2 INC2
+	     LDA2 ( height )
 
 	handle-image-size
 
-	( ;ff-palette-split0-init #08 Mbuf-next )
-	( ;ff-print #08 Mbuf-next )
-JMP2r
-
-
-@ff-reset-file ( buf-next* -- )
-	;filename .File/name DEO2
-	;str/start print-str
-	;str/start-file print-str
-	;filename print-str
-	( skip the header after reset )
-	( #10 Mbuf-next )
-
-	#0000 .x STZ2 #0000 .y STZ2
+	#0008 .bytes-expected STZ2
+	;ff-next-pixel .on-bytes-received STZ2
 JMP2r
 
 	
 ( farbfeld uses 16-bit depth, not alpha-premultiplied ) 
-( we discard the lower 10 bits )
-( use 4 bits directly, if alpha is not present )
-( or, multiply 2 bit color with 2 bit alpha to get 4 bits )
-@ff-get-next-color ( -- r g b )
+( we don't load the lower 8 bits )
+@ff-next-pixel ( {buffer}* -- )
 	( 255 INC becomes 0, so lambda isn't skipped -> opaque )
-	( .buf/ff-a LDZ DUP INC ?{ )
+	STH2k #0006 ADD2 LDA ( alpha )
+	DUP INC ?{
+		( alpha is zero )
 		POP
-		( .buf/ff-r LDZ #04 SFT )
-		( .buf/ff-g LDZ #04 SFT )
-		( .buf/ff-b LDZ #04 SFT )
-	JMP2r 
-	( } )
-	#06 SFT 
-	( DUP .buf/ff-r LDZ #06 SFT MUL )
-	( DUP .buf/ff-g LDZ #06 SFT MUL )
-	( DUP .buf/ff-b LDZ #06 SFT MUL )
+		STH2kr     LDA #04 SFT ( r )
+		#0002 Msk+ LDA #04 SFT ( g )
+		#0004 Ms+  LDA #04 SFT ( b )
+		.on-pixel-received LDZ2 JSR2
+		JMP2r
+	}
+	#00 SWP
+	DUP2 #00 STH2kr     LDA MUL2 POP #04 SFT ( 00 aa ar )
+	ROT ROT
+	DUP2 #00 #0002 Msk+ LDA MUL2 POP #04 SFT ( 00 aa ag )
+	ROT ROT
+	     #00 #0004 Ms+  LDA MUL2 POP #04 SFT ( ar ag ab )
+	.on-pixel-received LDZ2 JSR2
 JMP2r
 
 
@@ -326,8 +290,7 @@ JMP2r
 %Mpart3 { #0192 }
 ( %Mpart3 { #0258 } )
 
-@part0
-[ 
+@part0 [ 
 	( partition boundaries: start inclusive, end exclusive )
 	&r-start 00 &r-end ff   
 	&g-start 00 &g-end ff   
@@ -336,31 +299,30 @@ JMP2r
 	&r-sorted $40 &g-sorted $40 &b-sorted $40
 ]
 
-
-@part1
+@part1 [
 	( partition boundaries: start inclusive, end exclusive )
 	&r-start 00 &r-end ff
 	&g-start 00 &g-end ff
 	&b-start 00 &b-end ff
 	( radix-sorted lists of color values )
 	&r-sorted $40 &g-sorted $40 &b-sorted $40
+]
 
-
-@part2
+@part2 [
 	( partition boundaries: start inclusive, end exclusive )
 	&r-start 00 &r-end ff
 	&g-start 00 &g-end ff
 	&b-start 00 &b-end ff
 	( radix-sorted lists of color values )
 	( &r-sorted $40 &g-sorted $40 &b-sorted $40 )
+]
 
-
-@part3
+@part3 [
 	( partition boundaries: start inclusive, end exclusive )
 	&r-start 00 &r-end ff
 	&g-start 00 &g-end ff
 	&b-start 00 &b-end ff
-
+]
 
 
 @part-debug ( offset * -- )
@@ -526,45 +488,42 @@ JMP2r
 !fail
 
 
-@ff-palette-split0-init ( -- )
+@ff-palette-split0-init ( -> )
 	Mpart0 part-init
-	( ;ff-palette-split0 #08 Mbuf-next )
-	ff-palette-split0 
-	( jump to instruction immediately because the header 
-	  had already been read )
-JMP2r
+
+	;ff-palette-split0 .on-pixel-received STZ2
+	;ff-palette-split0-end .on-file-end STZ2
+	;read-file .Screen/vector DEO2
+BRK
 
 
-@ff-palette-split0 ( -- )
-	ff-get-next-color ( r g b )
-
+@ff-palette-split0 ( r g b -- )
 	Mpart0 part-process
-
-	advance-pos ?{
-		Mpart0 part-get-max-var
-		DUP #01 NEQ ?{
-			;part0/r-sorted #01 part-get-median
-			DUP ;part0/r-end STA
-			;part1/r-start STA
-			!&done
-		}
-		DUP #02 NEQ ?{
-			;part0/g-sorted #01 part-get-median
-			DUP ;part0/g-end STA
-			;part1/g-start STA
-			!&done
-		}
-		;part0/b-sorted #01 part-get-median
-		DUP ;part0/b-end STA
-		;part1/b-start STA
-		&done
-		Mpart0 part-debug
-		( Mpart1 part-debug )
-		
-		LIT "? Mcout
-		;ff-palette-split1-init ff-reset-file
-	}
 JMP2r
+
+@ff-palette-split0-end ( -> )
+	Mendl
+	Mpart0 part-get-max-var
+	DUP #01 NEQ ?{
+		;part0/r-sorted #01 part-get-median
+		DUP ;part0/r-end STA
+		;part1/r-start STA
+		!&done
+	}
+	DUP #02 NEQ ?{
+		;part0/g-sorted #01 part-get-median
+		DUP ;part0/g-end STA
+		;part1/g-start STA
+		!&done
+	}
+	;part0/b-sorted #01 part-get-median
+	DUP ;part0/b-end STA
+	;part1/b-start STA
+	&done
+	Mpart0 part-debug
+
+	!ff-palette-split1-init 
+BRK
 
 
 ( TODO potentially optimize: not check every part on every step )
@@ -606,104 +565,102 @@ JMP2r
 JMP2r
 
 
-@ff-palette-split1-init ( -- )
+@ff-palette-split1-init ( -> )
 	Mpart0 part-init
 	Mpart1 part-init
-	( ;ff-palette-split1 #08 Mbuf-next )
-JMP2r
+
+	;ff-palette-split1 .on-pixel-received STZ2
+	;ff-palette-split1-end .on-file-end STZ2
+	;read-file .Screen/vector DEO2
+BRK
 
 
-@ff-palette-split1 ( -- )
-	ff-get-next-color ( r g b )
-	( Mprint-rgb ff-get-next-color )
-
+@ff-palette-split1 ( r g b -- )
 	get-partition ?{
-		Mpart0 part-process !&processed
+		Mpart0 part-process 
+		JMP2r
 	}
 	Mpart1 part-process
+JMP2r
 
-	&processed
+@ff-palette-split1-end ( -> )
+	Mpart0 part-get-max-var
 
-	advance-pos ?{
-		( Mpart0 part-debug )
-		Mpart0 part-get-max-var
-
-		DUP #01 NEQ ?{
-			LIT "% Mcout
-			;part0/r-sorted #02 part-get-median
-			DUP ;part0/r-end STA
-			;part2/r-start STA
-			;part0/g-start LDA ;part2/g-start STA
-			;part0/g-end LDA ;part2/g-end STA
-			;part0/b-start LDA ;part2/b-start STA
-			;part0/b-end LDA ;part2/b-end STA
-			!&part0-done
-		}
-		DUP #02 NEQ ?{
-			;part0/r-start LDA ;part2/r-start STA
-			;part0/r-end LDA ;part2/r-end STA
-			;part0/g-sorted #02 part-get-median
-			DUP ;part0/g-end STA
-			;part2/g-start STA
-			;part0/b-start LDA ;part2/b-start STA
-			;part0/b-end LDA ;part2/b-end STA
-			!&part0-done
-		}
-		;part0/r-start LDA ;part2/r-start STA
-		;part0/r-end LDA ;part2/r-end STA
+	DUP #01 NEQ ?{
+		;part0/r-sorted #02 part-get-median
+		DUP ;part0/r-end STA
+		;part2/r-start STA
 		;part0/g-start LDA ;part2/g-start STA
 		;part0/g-end LDA ;part2/g-end STA
-		;part0/b-sorted #02 part-get-median
-		DUP ;part0/b-end STA
-		;part2/b-start STA
+		;part0/b-start LDA ;part2/b-start STA
+		;part0/b-end LDA ;part2/b-end STA
+		!&part0-done
+	}
+	DUP #02 NEQ ?{
+		;part0/r-start LDA ;part2/r-start STA
+		;part0/r-end LDA ;part2/r-end STA
+		;part0/g-sorted #02 part-get-median
+		DUP ;part0/g-end STA
+		;part2/g-start STA
+		;part0/b-start LDA ;part2/b-start STA
+		;part0/b-end LDA ;part2/b-end STA
+		!&part0-done
+	}
+	;part0/r-start LDA ;part2/r-start STA
+	;part0/r-end LDA ;part2/r-end STA
+	;part0/g-start LDA ;part2/g-start STA
+	;part0/g-end LDA ;part2/g-end STA
+	;part0/b-sorted #02 part-get-median
+	DUP ;part0/b-end STA
+	;part2/b-start STA
 
-		&part0-done
+	&part0-done
 
-		( Mpart1 part-debug )
-		Mpart1 part-get-max-var
+	Mpart1 part-get-max-var
 
 
-		DUP #01 NEQ ?{
-			;part1/r-sorted #02 part-get-median
-			DUP ;part1/r-end STA
-			;part3/r-start STA
-			;part1/g-start LDA ;part3/g-start STA
-			;part1/g-end LDA ;part3/g-end STA
-			;part1/b-start LDA ;part3/b-start STA
-			;part1/b-end LDA ;part3/b-end STA
-			!&part1-done
-		}
-		DUP #02 NEQ ?{
-			;part1/r-start LDA ;part3/r-start STA
-			;part1/r-end LDA ;part3/r-end STA
-			;part1/g-sorted #02 part-get-median
-			DUP ;part1/g-end STA
-			;part3/g-start STA
-			;part1/b-start LDA ;part3/b-start STA
-			;part1/b-end LDA ;part3/b-end STA
-			!&part1-done
-		}
-		;part1/r-start LDA ;part3/r-start STA
-		;part1/r-end LDA ;part3/r-end STA
+	DUP #01 NEQ ?{
+		;part1/r-sorted #02 part-get-median
+		DUP ;part1/r-end STA
+		;part3/r-start STA
 		;part1/g-start LDA ;part3/g-start STA
 		;part1/g-end LDA ;part3/g-end STA
-		;part1/b-sorted #02 part-get-median
-		DUP ;part1/b-end STA
-		;part3/b-start STA
-		&part1-done
-
-		Mpart0 part-debug
-		Mpart1 part-debug
-		Mpart2 part-debug
-		Mpart3 part-debug
-		
-		;ff-sum-colors-init ff-reset-file
+		;part1/b-start LDA ;part3/b-start STA
+		;part1/b-end LDA ;part3/b-end STA
+		!&part1-done
 	}
-JMP2r
+	DUP #02 NEQ ?{
+		;part1/r-start LDA ;part3/r-start STA
+		;part1/r-end LDA ;part3/r-end STA
+		;part1/g-sorted #02 part-get-median
+		DUP ;part1/g-end STA
+		;part3/g-start STA
+		;part1/b-start LDA ;part3/b-start STA
+		;part1/b-end LDA ;part3/b-end STA
+		!&part1-done
+	}
+	;part1/r-start LDA ;part3/r-start STA
+	;part1/r-end LDA ;part3/r-end STA
+	;part1/g-start LDA ;part3/g-start STA
+	;part1/g-end LDA ;part3/g-end STA
+	;part1/b-sorted #02 part-get-median
+	DUP ;part1/b-end STA
+	;part3/b-start STA
+	&part1-done
+
+	Mpart0 part-debug
+	Mpart1 part-debug
+	Mpart2 part-debug
+	Mpart3 part-debug
+	
+	!ff-sum-colors-init
+BRK
 
 
 @ff-sum-colors-init ( -- )
-	( ;ff-sum-colors #08 Mbuf-next )
+	;ff-sum-colors .on-pixel-received STZ2
+	;ff-avg-colors .on-file-end STZ2
+	;read-file .Screen/vector DEO2
 JMP2r
 
 
@@ -713,8 +670,7 @@ JMP2r
   avg value to &rh
   we then count "average of averages"
   )
-@ff-sum-colors ( -- )
-	ff-get-next-color
+@ff-sum-colors ( r g b -- )
 	get-partition #00 SWP #40 SFT STH2
 	#00 SWP ;&b Msk+ LDAk2 ROT2 ADD2 SWP2 STA2
 	#00 SWP ;&g Msk+ LDAk2 ROT2 ADD2 SWP2 STA2
@@ -736,9 +692,6 @@ JMP2r
 
 	&done
 	POP2r
-	advance-pos ?{ 
-		ff-avg-colors
-	}
 JMP2r
 	&r $2 &rh $2 &g $2 &gh $2 &b $2 &bh $2 &n $2 &nh $2
 	@sum1 [ &r $2 &rh $2 &g $2 &gh $2 &b $2 &bh $2 &n $2 &nh $2 ]
@@ -764,7 +717,7 @@ JMP2r
 JMP2r
 
 
-@ff-avg-colors ( -- )
+@ff-avg-colors ( -> )
 	;ff-sum-colors/r ;ff-sum-colors/n ff-avg-color .color0/r STZ
 	;ff-sum-colors/g ;ff-sum-colors/n ff-avg-color .color0/g STZ
 	;ff-sum-colors/b ;ff-sum-colors/n ff-avg-color .color0/b STZ
@@ -782,27 +735,24 @@ JMP2r
 	;sum3/b ;sum3/n ff-avg-color .color3/b STZ
 
 	prepare-palette
-
-	;ff-print-init ff-reset-file
-JMP2r
+	!ff-print-init
+BRK
 
 
 
 ( printing )
 
 
-@ff-print-init
-	( ;ff-print #08 Mbuf-next )
-JMP2r
+@ff-print-init ( -> )
+	;ff-print .on-pixel-received STZ2
+	;done .on-file-end STZ2
+	;read-file .Screen/vector DEO2
+BRK
 
 
-@ff-print ( -- )
-	ff-get-next-color ( r g b )
+@ff-print ( r g b -- )
 	pick-color .Screen/pixel DEO
-	advance-pos-screen ?{
-		;str/end print-str 
-		( ;after-end .buf-on-read STZ2 )
-	}
+	advance-screen-pos
 JMP2r
 
 
@@ -883,29 +833,26 @@ JMP2r
 JMP2r
 
 
-@advance-pos ( -- continue )
-	( LIT "x Mcout .x LDZ2 Mprint-short )
-	( LIT "y Mcout .y LDZ2 Mprint-short Mendl )
-	.x LDZ2 INC2 .img-w LDZ2 NEQ2k ?{
-		POP2 POP2 #0000 .x STZ2
-		.y LDZ2 INC2
-		DUP2 .y STZ2
-		.img-h LDZ2 NEQ2
-	JMP2r }
-	POP2 .x STZ2
-	#01
-JMP2r
+( @advance-pos ( -- continue ) )
+( 	( LIT "x Mcout .x LDZ2 Mprint-short ) )
+( 	( LIT "y Mcout .y LDZ2 Mprint-short Mendl ) )
+( 	.x LDZ2 INC2 .img-w LDZ2 NEQ2k ?{ )
+( 		POP2 POP2 #0000 .x STZ2 )
+( 		.y LDZ2 INC2 )
+( 		DUP2 .y STZ2 )
+( 		.img-h LDZ2 NEQ2 )
+( 	JMP2r } )
+( 	POP2 .x STZ2 )
+( 	#01 )
+( JMP2r )
 
 
 ( assumes screen auto )
-@advance-pos-screen ( -- continue )
+@advance-screen-pos ( -- )
 	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
 		#0000 .Screen/x DEO2 
-		.Screen/y DEI2 INC2 
-		DUP2 .Screen/y DEO2 
-		.img-h LDZ2 NEQ2
-	JMP2r }
-	#01
+		.Screen/y DEI2 INC2 .Screen/y DEO2 
+	}
 JMP2r
 
 
@@ -914,8 +861,8 @@ JMP2r
 ( end )
 
 
-@after-end ( -- )
-	;str/after-end print-str	
+@done ( -- )
+	;str/end print-str
 JMP2r
 
 
@@ -945,9 +892,9 @@ BRK
 
 @str [
 	&init "Hello! 0a 00
-	&start "Reading 20 00
-	&start-file "file: 20 00
-	&start-stdin "standard 20 "input... 0a 00
+	&read "Reading 20 00
+	&read-file "file: 20 00
+	&read-stdin "standard 20 "input... 0a 00
 	&end "Готово! 0a 00
 	&usage "Usage: 20 "svitlyna.rom 20 "image.ff 0a 00
 	&cannot-fullscreen "Unable 20 "to 20 "resize 20 "screen. 0a 00
@@ -1043,15 +990,15 @@ JMP2r
     LIT2 [ &w0 $1 &w1 $1 ] LIT [ &w2 $1 ] #00
     !add32
 
-( x * y )
-@mul32 ( x** y** -> z** )
-    ROT2k ( x0* x1* y0* y1* y0* y1* x1* )
-    mul16 ,&z1 STR2 ,&z0 STR2 POP2 ( x0* x1* y0* y1* ; sum = [x1*y1] )
-    STH2 ROT2 STH2                 ( x1* y0* [y1* x0*] )
-    MUL2r MUL2 STH2r ADD2          ( x1*y0+y1*x0* )
-    ( [x0*y0]<<32 will completely overflow )
-    LIT2 [ &z0 $2 ] ADD2 ( sum += [x0*y1+x1*y0]<<16 )
-    LIT2 [ &z1 $2 ] JMP2r
+( ( x * y ) )
+( @mul32 ( x** y** -> z** ) )
+(     ROT2k ( x0* x1* y0* y1* y0* y1* x1* ) )
+(     mul16 ,&z1 STR2 ,&z0 STR2 POP2 ( x0* x1* y0* y1* ; sum = [x1*y1] ) )
+(     STH2 ROT2 STH2                 ( x1* y0* [y1* x0*] ) )
+(     MUL2r MUL2 STH2r ADD2          ( x1*y0+y1*x0* ) )
+(     ( [x0*y0]<<32 will completely overflow ) )
+(     LIT2 [ &z0 $2 ] ADD2 ( sum += [x0*y1+x1*y0]<<16 ) )
+(     LIT2 [ &z1 $2 ] JMP2r )
 
 ( x >> n )
 @rshift32 ( x** n^ -> x>>n )
@@ -1100,7 +1047,7 @@ JMP2r
     #08 SUB #40 SFT STH ( stash [n-8]<<4 )
         DUP2 STHkr SFT2 ,&z1 STR2
     POP      STHr  SFT2 ,&z1 LDR ORA ,&z1 STR
-    NIP LIT2 [ &z1 $1 &z2 $1 ] #00 JMP2r
+    NIP LIT2 [ &z1 $2 ] #00 JMP2r
 
 ( shift left by 16-23 bits )
 @lshift32-2 ( x** n^ -> x<<n )
@@ -1124,16 +1071,16 @@ JMP2r
 @div32 ( x** y** -> q** )
     z_divmod32 ;z_divmod32/quo0 LDA2 ;z_divmod32/quo1 LDA2 JMP2r
 
-( x % y )
-@mod32 ( x** y** -> r** )
-    z_divmod32 ;z_divmod32/rem0 LDA2 ;z_divmod32/rem1 LDA2 JMP2r
+( ( x % y ) )
+( @mod32 ( x** y** -> r** ) )
+(     z_divmod32 ;z_divmod32/rem0 LDA2 ;z_divmod32/rem1 LDA2 JMP2r )
 
-( x / y, x % y )
-@divmod32 ( x** y** -> q** r** )
-    z_divmod32
-    ;z_divmod32/quo0 LDA2 ;z_divmod32/quo1 LDA2
-    ;z_divmod32/rem0 LDA2 ;z_divmod32/rem1 LDA2
-    JMP2r
+( ( x / y, x % y ) )
+( @divmod32 ( x** y** -> q** r** ) )
+(     z_divmod32 )
+(     ;z_divmod32/quo0 LDA2 ;z_divmod32/quo1 LDA2 )
+(     ;z_divmod32/rem0 LDA2 ;z_divmod32/rem1 LDA2 )
+(     JMP2r )
 
 ( private: calculate and store x / y and x % y )
 @z_divmod32 ( x** y** -> )
@@ -1173,7 +1120,7 @@ JMP2r
       non-zero32 ?&loop JMP2r              ( ; loop if cur>0, else we're done )
 
 
-@filename $0800
+@filename "image.ff $0800
 @file-buf-pre $20
 @file-buf [ $07e0 &pre-end $20 &end ]
 
