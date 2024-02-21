@@ -16,34 +16,26 @@
 ]
 
 |0000 
+
 @x $2 @y $2
-@img-w $2 @img-h $2
+@decode-x $2 @decode-y $2 @line-buf $2
+@img-w $2 @img-h $2 @img-size $4
 
-( see bottom of file for reasoning )
-%Mmax-w-smol { #0200 }
-%Mmax-w-big { #1000 }
-
-( max width is 4096, max height is also 4096, thus maximum size is 
- 24 bits, this is used in the cumulutive average formula for colors )
-%Mmax-h-big { #0fff }
-
-%Mmax-name-length { #00ff }
+%Mmax-width { #0800 }
+%Mmax-height { #1000 }
+%Mmax-name-length { #07ff }
 
 @color0 [ &r $1 &g $1 &b $1 ]
 @color1 [ &r $1 &g $1 &b $1 ]
 @color2 [ &r $1 &g $1 &b $1 ]
 @color3 [ &r $1 &g $1 &b $1 ]
 
-(       Farbfeld                 )
-(	ff-magic-2 ff-pixel      )
-@buf [
-	&ff-w-high &ff-r     $2
-	&ff-w-low  &ff-g     $2     
-	&ff-h-high &ff-b     $2
-	&ff-h-low  &ff-a     $10
-]
-@buf-size-expect $1 @buf-on-read $2
-%Mbuf-next { .buf-size-expect STZ .buf-on-read STZ2 }
+%Mfile-buffer-length { #0800 }
+@bytes-expected $2
+
+@on-bytes-received $2
+@on-pixel-received $2
+@on-file-end $2
 
 %Mcout { .Console/write DEO }
 %Mendl { #0a Mcout }
@@ -69,16 +61,6 @@
 	DUP print-byte
 	STHr DUP print-byte Mendl
 }
-%Mdump-buffer {
-	#00
-	&dump-buffer-loop 
-		DUP print-byte #20 Mcout
-		DUP .buf ADD LDZ DUP print-byte 
-		LIT "| Mcout Mcout Mendl
-		INC DUP #08 NEQ 
-	?&dump-buffer-loop
-	POP
-}
 
 %Msk+ { STH2kr ADD2 }
 %Ms+ { STH2r ADD2 }
@@ -86,42 +68,69 @@
 
 |0100
 ( init )
+	#0004 .bytes-expected STZ2
+	;test-cat .on-bytes-received STZ2
+	;test-cat-end .on-file-end STZ2
+	{ "test.txt 00 } STH2r 
+	DUP2 print-str
+	read-file
+
+	
+	#1234 ;end STA2
+	;end LDA2 #1234 EQU2 ?{ ;str/memory-error !fail }
+
+	[ #0000 #00 ] .color0/b STZ .color0/g STZ .color0/r STZ
+	[ #0505 #05 ] .color1/b STZ .color1/g STZ .color1/r STZ
+	[ #0909 #09 ] .color2/b STZ .color2/g STZ .color2/r STZ
+	[ #0f0f #0f ] .color3/b STZ .color3/g STZ .color3/r STZ
+	prepare-palette
 	;str/init print-str
 
-	( hardcoded colors for now )
 	#01 .Screen/auto DEO
 
-	;detect-magic #08 Mbuf-next
+	( ;detect-magic #08 Mbuf-next )
 
-	.Console/type DEI ?{ 
-		;str/start print-str ;str/start-stdin print-str
-		;on-stdin .Console/vector DEO2 
-	BRK 
-	}
+	( .Console/type DEI ?{  )
+	( 	;str/start print-str ;str/start-stdin print-str )
+	( 	;on-stdin .Console/vector DEO2  )
+	( BRK  )
+	( } )
 
 	;read-argument .Console/vector DEO2
 BRK
 
 
+( @on-stdin ( -> ) )
+( 	LIT [ &index 00 ]  )
+( 	DUP .buf ADD .Console/read DEI SWP STZ )
+( 	INC DUP .buf-size-expect LDZ NEQ ?{ )
+( 		( Mdump-buffer ) )
+( 		( call subroutine ) )
+( 		.buf-on-read LDZ2 JSR2 )
+( 		.buf-on-read LDZ2 ;after-end NEQ2 ?{  )
+( 			#0000 .Console/vector DEO2 )
+( 		} )
+( 		POP #00 )
+( 	} )
+( 	[ ,&index STR ] )
+( BRK )
 
-
-( i/o )
-
-
-@on-stdin ( -> )
-	LIT [ &index 00 ] 
-	DUP .buf ADD .Console/read DEI SWP STZ
-	INC DUP .buf-size-expect LDZ NEQ ?{
-		( Mdump-buffer )
-		( call subroutine )
-		.buf-on-read LDZ2 JSR2
-		.buf-on-read LDZ2 ;after-end NEQ2 ?{ 
-			#0000 .Console/vector DEO2
-		}
-		POP #00
-	}
-	[ ,&index STR ]
-BRK
+@test-cat ( buffer* -- )
+	( LIT "( Mcout LIT "1 Mcout LIT ") Mcout )
+	LDAk .Console/write DEO
+	INC2
+	( LIT "( Mcout LIT "2 Mcout LIT ") Mcout )
+	LDAk .Console/write DEO
+	INC2
+	( LIT "( Mcout LIT "3 Mcout LIT ") Mcout )
+	LDAk .Console/write DEO
+	INC2
+	( LIT "( Mcout LIT "4 Mcout LIT ") Mcout )
+	LDA .Console/write DEO
+JMP2r
+@test-cat-end
+	LIT "! Mcout Mendl
+JMP2r
 
 
 @read-argument ( -> )
@@ -158,23 +167,68 @@ BRK
 
 	( print loop )
 	&loop
-		#00 .buf-size-expect LDZ .File/length DEO2
-		( ;buf Mprint-short #00 .buf Mprint-short Mendl )
-		;buf .File/read DEO2
+		( #00 .buf-size-expect LDZ .File/length DEO2 )
+		( ;buf .File/read DEO2 )
 
 		( shouldn't read more than 255 bytes )
-		.File/success DEI2 #00 .buf-size-expect LDZ 
+		( .File/success DEI2 #00 .buf-size-expect LDZ  )
 		EQU2 ?{ ;str/io-error !fail-str }
 
 
 		( call subroutine )
-		.buf-on-read LDZ2 JSR2
+		( .buf-on-read LDZ2 JSR2 )
 
-		.buf-on-read LDZ2 ;after-end NEQ2
+		( .buf-on-read LDZ2 ;after-end NEQ2 )
 	?&loop
 BRK
 
 
+@read-file ( {filename}* -> )
+	.File/name DEO2
+	Mfile-buffer-length .File/length DEO2
+
+	&read
+		;file-buf 
+		( DUP2 LIT "B Mdebug-short )
+		( LIT "E Mcout ;file-buf/end Mprint-short )
+		DUP2 .File/read DEO2
+		.File/success DEI2 ADD2 [ ,&window-end STR2 ]
+
+	&loop
+		[ LIT2 &window =file-buf ] 
+		DUP2 .bytes-expected LDZ2 ADD2 ( next window )
+		[ LIT2 &window-end =file-buf/end ]
+		GTH2k ?{
+			ROT2
+			( call func )
+			.on-bytes-received LDZ2 JSR2
+			POP2 [ ,&window STR2 ]
+			!&loop
+
+			( copy cmd )
+			&cmd [ 
+				01 0020
+				0000 =file-buf/pre-end 
+				0000 =file-buf-pre 
+			]
+		}
+		( not enough bytes )
+
+		;file-buf/end NEQ2 ?{
+			( LIT "N Mcout )
+			( SWP2 LIT "W Mdebug-short SWP2 )
+			( LIT "N Mdebug-short )
+			( buffer full )
+			( copy last 20 bytes to pre-buffer )
+			;&cmd .System/expansion DEO2
+			POP2
+			Mfile-buffer-length SUB2 
+			( LIT "! Mdebug-short )
+			[ ,&window STR2 ]
+			!&read
+		}
+		.on-file-end LDZ2 JSR2
+BRK
 
 
 ( image format )
@@ -187,7 +241,7 @@ BRK
 		DUP2
 		;&magic ADD2 LDA #00 EQU ?&loop-end
 		DUP2 ;&magic ADD2 LDA 
-		OVR .buf ADD LDZ
+		( OVR .buf ADD LDZ )
 		DUP .Console/write DEO 
 		EQU ?{ !bad-file }
 		INC2 
@@ -196,20 +250,20 @@ BRK
 	&loop-end
 
 	Mendl 
-	;ff-size #08 Mbuf-next
+	( ;ff-size #08 Mbuf-next )
 	POP2 
 JMP2r
 
 
 @ff-size ( -- )
-	.buf/ff-w-high LDZ2 #0000 EQU2 ?{ !too-large }
-	.buf/ff-w-low LDZ2 
-	.buf/ff-h-high LDZ2 #0000 EQU2 ?{ !too-large }
-	.buf/ff-h-low LDZ2
+	( .buf/ff-w-high LDZ2 #0000 EQU2 ?{ !too-large } )
+	( .buf/ff-w-low LDZ2  )
+	( .buf/ff-h-high LDZ2 #0000 EQU2 ?{ !too-large } )
+	( .buf/ff-h-low LDZ2 )
 
 	handle-image-size
 
-	;ff-palette-split0-init #08 Mbuf-next
+	( ;ff-palette-split0-init #08 Mbuf-next )
 	( ;ff-print #08 Mbuf-next )
 JMP2r
 
@@ -220,7 +274,7 @@ JMP2r
 	;str/start-file print-str
 	;filename print-str
 	( skip the header after reset )
-	#10 Mbuf-next
+	( #10 Mbuf-next )
 
 	#0000 .x STZ2 #0000 .y STZ2
 JMP2r
@@ -232,23 +286,17 @@ JMP2r
 ( or, multiply 2 bit color with 2 bit alpha to get 4 bits )
 @ff-get-next-color ( -- r g b )
 	( 255 INC becomes 0, so lambda isn't skipped -> opaque )
-	.buf/ff-a LDZ DUP INC ?{
+	( .buf/ff-a LDZ DUP INC ?{ )
 		POP
-		( LIT "# Mcout )
-		.buf/ff-r LDZ #04 SFT
-		( DUP print-byte )
-		.buf/ff-g LDZ #04 SFT
-		( DUP print-byte )
-		.buf/ff-b LDZ #04 SFT
-		( DUP print-byte )
-		( LIT "< Mcout )
-		( .buf/ff-b LDZ .buf/ff-g LDZ .buf/ff-r LDZ Mprint-bgr )
+		( .buf/ff-r LDZ #04 SFT )
+		( .buf/ff-g LDZ #04 SFT )
+		( .buf/ff-b LDZ #04 SFT )
 	JMP2r 
-	}
+	( } )
 	#06 SFT 
-	DUP .buf/ff-r LDZ #06 SFT MUL
-	DUP .buf/ff-g LDZ #06 SFT MUL
-	DUP .buf/ff-b LDZ #06 SFT MUL
+	( DUP .buf/ff-r LDZ #06 SFT MUL )
+	( DUP .buf/ff-g LDZ #06 SFT MUL )
+	( DUP .buf/ff-b LDZ #06 SFT MUL )
 JMP2r
 
 
@@ -260,41 +308,11 @@ JMP2r
 @handle-image-size ( w* h* -- )
 	;str/height print-str DUP2 Mprint-short Mendl
 
-	DUP2k .Screen/height DEO2 .img-h STZ2
-	DUP2 Mmax-h-big LTH2 ?{ !too-large }
-	.Screen/height DEI2 EQU2 ?{
-		( ;str/height print-str .Screen/height DEI2  )
-		( Mprint-short Mendl )
-		( #01 .no-fullscreen STZ )
-	}
+	DUP2 .Screen/height DEO2 .img-h STZ2
 
 	;str/width print-str DUP2 Mprint-short Mendl
 
-	DUP2 Mmax-w-big LTH2 ?{ !too-large }
-	DUP2k .Screen/width DEO2 .img-w STZ2
-	.Screen/width DEI2 EQU2 ?{
-		( ;str/width print-str .Screen/width DEI2  )
-		( Mprint-short Mendl )
-		( #01 .no-fullscreen STZ )
-	}
-	( .no-fullscreen LDZ #00 EQU ?{ ;str/cannot-fullscreen !fail-str } )
-
-	( Mmax-w-smol LTH2 ?{ 
-		( memory check )
-		LIT "! #ffff STA
-		#ffff LDA LIT "! EQU ?{
-			#01 .no-dithering STZ 
-		}
-		LIT "? #ffff STA
-		#ffff LDA LIT "? EQU ?{
-			#01 .no-dithering STZ 
-		}
-	}
-
-	Mmax-w-big LTH2 ?{ 
-		#01 .no-dithering STZ 
-	}
-	.no-fullscreen LDZ SUB ?{ ;str/cannot-fullscreen !fail-str } )
+	DUP2 .Screen/width DEO2 .img-w STZ2
 JMP2r
 
 
@@ -510,7 +528,7 @@ JMP2r
 
 @ff-palette-split0-init ( -- )
 	Mpart0 part-init
-	;ff-palette-split0 #08 Mbuf-next
+	( ;ff-palette-split0 #08 Mbuf-next )
 	ff-palette-split0 
 	( jump to instruction immediately because the header 
 	  had already been read )
@@ -591,7 +609,7 @@ JMP2r
 @ff-palette-split1-init ( -- )
 	Mpart0 part-init
 	Mpart1 part-init
-	;ff-palette-split1 #08 Mbuf-next
+	( ;ff-palette-split1 #08 Mbuf-next )
 JMP2r
 
 
@@ -685,7 +703,7 @@ JMP2r
 
 
 @ff-sum-colors-init ( -- )
-	;ff-sum-colors #08 Mbuf-next
+	( ;ff-sum-colors #08 Mbuf-next )
 JMP2r
 
 
@@ -731,22 +749,14 @@ JMP2r
 @ff-avg-color ( {chan}* {n}* -- avg-color )
 	STH2
 	#0000 SWP2 LDA2k ( low )
-	LIT "L Mdebug-short
 	#0000 ROT2 INC2 INC2 LDA2 #0c lshift32 ( high )
-	LIT "H Mdebug32
 	add32
-	LIT "= Mdebug32 Mendl
 
 	#0000 STH2r
 	LDA2k ( low n )
-	LIT "n Mdebug-short
 	#0000 ROT2 INC2 INC2 LDA2 #0c lshift32 ( high n )
-	LIT "N Mdebug32
 	add32
-	LIT "= Mdebug32 Mendl
 	div32
-	LIT "= Mdebug32 Mendl
-
 
 	SWP #00 EQU ?{ !fail }
 	SWP #00 EQU ?{ !fail }
@@ -755,36 +765,20 @@ JMP2r
 
 
 @ff-avg-colors ( -- )
-	LIT "0 Mcout Mendl
-	LIT "r Mcout Mendl
 	;ff-sum-colors/r ;ff-sum-colors/n ff-avg-color .color0/r STZ
-	LIT "g Mcout Mendl
 	;ff-sum-colors/g ;ff-sum-colors/n ff-avg-color .color0/g STZ
-	LIT "b Mcout Mendl
 	;ff-sum-colors/b ;ff-sum-colors/n ff-avg-color .color0/b STZ
 
-	LIT "1 Mcout Mendl
-	LIT "r Mcout Mendl
 	;sum1/r ;sum1/n ff-avg-color .color1/r STZ
-	LIT "g Mcout Mendl
 	;sum1/g ;sum1/n ff-avg-color .color1/g STZ
-	LIT "b Mcout Mendl
 	;sum1/b ;sum1/n ff-avg-color .color1/b STZ
 
-	LIT "2 Mcout Mendl
-	LIT "r Mcout Mendl
 	;sum2/r ;sum2/n ff-avg-color .color2/r STZ
-	LIT "g Mcout Mendl
 	;sum2/g ;sum2/n ff-avg-color .color2/g STZ
-	LIT "b Mcout Mendl
 	;sum2/b ;sum2/n ff-avg-color .color2/b STZ
 
-	LIT "3 Mcout Mendl
-	LIT "r Mcout Mendl
 	;sum3/r ;sum3/n ff-avg-color .color3/r STZ
-	LIT "g Mcout Mendl
 	;sum3/g ;sum3/n ff-avg-color .color3/g STZ
-	LIT "b Mcout Mendl
 	;sum3/b ;sum3/n ff-avg-color .color3/b STZ
 
 	prepare-palette
@@ -798,7 +792,7 @@ JMP2r
 
 
 @ff-print-init
-	;ff-print #08 Mbuf-next
+	( ;ff-print #08 Mbuf-next )
 JMP2r
 
 
@@ -807,7 +801,7 @@ JMP2r
 	pick-color .Screen/pixel DEO
 	advance-pos-screen ?{
 		;str/end print-str 
-		;after-end .buf-on-read STZ2
+		( ;after-end .buf-on-read STZ2 )
 	}
 JMP2r
 
@@ -962,8 +956,8 @@ BRK
 	&after-end "Warning: 20 
 	           "input 20 "after 20 "image 20 "end. 0a 00
 	&filename-big "File 20 "name 20 "too 20 "big. 0a 00
-	&divided-colors "Divided 20 "colors. 0a 00
 	&io-error "I/O 20 "error 0a 20 00
+	&memory-error "Not 20 "enough 20 "RAM? 0a 20 00
 ]
 
 
@@ -1179,14 +1173,14 @@ JMP2r
       non-zero32 ?&loop JMP2r              ( ; loop if cur>0, else we're done )
 
 
-|7000 @filename
+@filename $0800
+@file-buf-pre $20
+@file-buf [ $07e0 &pre-end $20 &end ]
 
 
-(   lines: #8000-#ec00
-           0x0c00 = 3072 bytes per line
-           3072 / 3 * 4 = 4096 pixels per line
-  sprites: #ec00-#f000
-           0x0400 = 1024 bytes total
-           1024 * 4 = 4096 pixels per line )
-|8000 @lines-big
-|ec00 @sprite-big
+( 10 buffers, 8 needed to generate .chr files, plus 2 for dithering )
+@line-buffer [
+	&0 $0c00 &1 $0c00 &2 $0c00 &3 $0c00 &4 $0c00 
+	&5 $0c00 &6 $0c00 &7 $0c00 &8 $0c00
+]
+@end
