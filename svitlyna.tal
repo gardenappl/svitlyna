@@ -37,6 +37,8 @@
 @on-pixel-received $2
 @on-file-end $2
 
+@current-part-split $1
+
 %Mcout { .Console/write DEO }
 %Mendl { #0a Mcout }
 
@@ -337,11 +339,7 @@ JMP2r
 
 ( image processing )
 
-%Mpart0 { #0000 }
-%Mpart1 { #00c6 }
-%Mpart2 { #018c }
-%Mpart3 { #0192 }
-( %Mpart3 { #0258 } )
+%Mpart-size { #00ca }
 
 @part0 [ 
 	( partition boundaries: start inclusive, end exclusive )
@@ -349,6 +347,7 @@ JMP2r
 	&g-start 00 &g-end ff   
 	&b-start 00 &b-end ff   
 	( radix-sorted lists of color values )
+	&count $4
 	&r-sorted $40 &g-sorted $40 &b-sorted $40
 ]
 
@@ -358,6 +357,7 @@ JMP2r
 	&g-start 00 &g-end ff
 	&b-start 00 &b-end ff
 	( radix-sorted lists of color values )
+	&count $4
 	&r-sorted $40 &g-sorted $40 &b-sorted $40
 ]
 
@@ -367,7 +367,8 @@ JMP2r
 	&g-start 00 &g-end ff
 	&b-start 00 &b-end ff
 	( radix-sorted lists of color values )
-	( &r-sorted $40 &g-sorted $40 &b-sorted $40 )
+	&count $4
+	&r-sorted $40 &g-sorted $40 &b-sorted $40
 ]
 
 @part3 [
@@ -378,15 +379,15 @@ JMP2r
 ]
 
 
-@part-debug ( offset * -- )
-	STH2
-	Mendl
+@part-debug ( part -- )
+	#00 OVR Mpart-size MUL2 STH2
+	( { "part 20 00 } STH2r print-str DUP print-byte Mcout )
 	LIT "R Mcout ;part0/r-start Msk+ LDA2 Mprint-short
 	LIT "G Mcout ;part0/g-start Msk+ LDA2 Mprint-short
 	LIT "B Mcout ;part0/b-start Msk+ LDA2 Mprint-short Mendl
 
-	STH2kr Mpart2 NEQ2 ?{ POP2r JMP2r }
-	STH2kr Mpart3 NEQ2 ?{ POP2r JMP2r }
+	DUP #02 NEQ2 ?{ POP POP2r JMP2r }
+	#03 NEQ2 ?{ POP2r JMP2r }
 
 	#0000 
 	LIT "S Mcout LIT "R Mcout Mendl
@@ -437,8 +438,10 @@ JMP2r
 JMP2r
 
 
-@part-init ( offset* -- )
-	STH2
+@part-init ( part -- )
+	#00 SWP Mpart-size MUL2 STH2
+	#0000 ;part0/count Msk+ STA2k
+	INC2 INC2 STA2
 	#0000 
 	&loop
 		#0000 OVR2 ;part0/r-sorted ADD2 Msk+ STA2
@@ -449,16 +452,17 @@ JMP2r
 
 
 ( get color variation within partition )
-@part-process ( r g b offset* -- )
-	STH2
+@part-add-pixel ( r g b part -- )
+	#00 SWP Mpart-size MUL2 STH2
 	#20 SFT #00 SWP ;part0/b-sorted Msk+ ADD2 inc32-addr
 	#20 SFT #00 SWP ;part0/g-sorted Msk+ ADD2 inc32-addr
-	#20 SFT #00 SWP ;part0/r-sorted Ms+ ADD2 inc32-addr
+	#20 SFT #00 SWP ;part0/r-sorted Msk+ ADD2 inc32-addr
+	;part0/count Ms+ inc32-addr
 JMP2r 
 
 
-@part-get-max-var ( offset* -- max-var max-var-chan )
-	STH2
+@part-get-max-var ( part -- max-var max-var-chan )
+	#00 SWP Mpart-size MUL2 STH2
 	#00
 	&find-r-min
 		#00 OVR #20 SFT ;part0/r-sorted ADD2 Msk+
@@ -521,7 +525,7 @@ JMP2r
 
 
 @part-get-median ( buffer* div -- median )
-	Mendl Mendl
+	Mendl
 	#00 SWP .img-w LDZ2 .img-h LDZ2 mul16 
 	ROT2 NIP shift32-0 
 	[ ,&midl STR2 ] [ ,&midh STR2 ]
@@ -542,7 +546,7 @@ JMP2r
 
 
 @palette-split0-init ( -> )
-	Mpart0 part-init
+	#00 part-init
 
 	;palette-split0 .on-pixel-received STZ2
 	;palette-split0-end .on-file-end STZ2
@@ -551,12 +555,12 @@ BRK
 
 
 @palette-split0 ( r g b -- )
-	Mpart0 part-process
+	#00 part-add-pixel
 JMP2r
 
 @palette-split0-end ( -> )
 	Mendl
-	Mpart0 part-get-max-var
+	#00 part-get-max-var
 	DUP #01 NEQ ?{
 		;part0/r-sorted #01 part-get-median
 		DUP ;part0/r-end STA
@@ -573,7 +577,7 @@ JMP2r
 	DUP ;part0/b-end STA
 	;part1/b-start STA
 	&done
-	Mpart0 part-debug
+	#00 part-debug
 
 	!palette-split1-init 
 BRK
@@ -619,8 +623,8 @@ JMP2r
 
 
 @palette-split1-init ( -> )
-	Mpart0 part-init
-	Mpart1 part-init
+	#00 part-init
+	#01 part-init
 
 	;palette-split1 .on-pixel-received STZ2
 	;palette-split1-end .on-file-end STZ2
@@ -630,14 +634,14 @@ BRK
 
 @palette-split1 ( r g b -- )
 	get-partition ?{
-		Mpart0 part-process 
+		#00 part-add-pixel 
 		JMP2r
 	}
-	Mpart1 part-process
+	#01 part-add-pixel
 JMP2r
 
 @palette-split1-end ( -> )
-	Mpart0 part-get-max-var
+	#00 part-get-max-var
 
 	DUP #01 NEQ ?{
 		;part0/r-sorted #02 part-get-median
@@ -669,7 +673,7 @@ JMP2r
 
 	&part0-done
 
-	Mpart1 part-get-max-var
+	#01 part-get-max-var
 
 
 	DUP #01 NEQ ?{
@@ -701,10 +705,10 @@ JMP2r
 	;part3/b-start STA
 	&part1-done
 
-	Mpart0 part-debug
-	Mpart1 part-debug
-	Mpart2 part-debug
-	Mpart3 part-debug
+	#00 part-debug
+	#01 part-debug
+	#02 part-debug
+	#03 part-debug
 	
 	!sum-colors-init
 BRK
