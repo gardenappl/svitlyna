@@ -82,10 +82,13 @@
 	#01 .Screen/auto DEO
 
 	.Console/type DEI ?{ 
-		( ;str/start print-str ;str/start-stdin print-str )
-		( ;on-stdin .Console/vector DEO2  )
-		!ff-palette-split0-init
-	BRK 
+		;on-stdin .Console/vector DEO2	
+		;str/read print-str ;str/read-stdin print-str
+
+		;detect-magic .on-bytes-received STZ2
+		#0008 .bytes-expected STZ2
+		;display .on-pixel-received STZ2
+		BRK 
 	}
 
 	;read-argument .Console/vector DEO2
@@ -93,35 +96,35 @@ BRK
 
 
 ( just for testing )
-@echo-file ( {buffer}* -> )
-	LIT "( Mcout LIT "0 Mcout LIT ") Mcout
-	DUP2 LDA Mcout INC2
-	LIT "( Mcout LIT "1 Mcout LIT ") Mcout
-	DUP2 LDA Mcout INC2
-	LIT "( Mcout LIT "2 Mcout LIT ") Mcout
-	DUP2 LDA Mcout INC2
-	LIT "( Mcout LIT "3 Mcout LIT ") Mcout
-	DUP2 LDA Mcout INC2
-	LIT "( Mcout LIT "4 Mcout LIT ") Mcout
-	LDA Mcout 
-JMP2r
+( @echo-file ( {buffer}* -> ) )
+( 	LIT "( Mcout LIT "0 Mcout LIT ") Mcout )
+( 	DUP2 LDA Mcout INC2 )
+( 	LIT "( Mcout LIT "1 Mcout LIT ") Mcout )
+( 	DUP2 LDA Mcout INC2 )
+( 	LIT "( Mcout LIT "2 Mcout LIT ") Mcout )
+( 	DUP2 LDA Mcout INC2 )
+( 	LIT "( Mcout LIT "3 Mcout LIT ") Mcout )
+( 	DUP2 LDA Mcout INC2 )
+( 	LIT "( Mcout LIT "4 Mcout LIT ") Mcout )
+( 	LDA Mcout  )
+( JMP2r )
 
 
 
-( @on-stdin ( -> ) )
-( 	LIT [ &index 00 ]  )
-( 	DUP .buf ADD .Console/read DEI SWP STZ )
-( 	INC DUP .buf-size-expect LDZ NEQ ?{ )
-( 		( Mdump-buffer ) )
-( 		( call subroutine ) )
-( 		.buf-on-read LDZ2 JSR2 )
-( 		.buf-on-read LDZ2 ;after-end NEQ2 ?{  )
-( 			#0000 .Console/vector DEO2 )
-( 		} )
-( 		POP #00 )
-( 	} )
-( 	[ ,&index STR ] )
-( BRK )
+@on-stdin ( -> )
+	( LIT ". Mcout )
+	[ LIT2 &index 0000 ] 
+	DUP2 ;file-buf ADD2 
+	.Console/read DEI ROT ROT STA
+	INC2 DUP2 .bytes-expected LDZ2 NEQ2 ?{
+		( LIT "! Mcout )
+		( call subroutine )
+		;file-buf .on-bytes-received LDZ2 JSR2
+		POP2 #0000 [ ,&index STR2 ]
+		BRK
+	}
+	[ ,&index STR2 ]
+BRK
 
 
 @read-argument ( -> )
@@ -133,7 +136,8 @@ JMP2r
 		#00 [ ,&name-length LDR2 ] ;filename ADD2 STA
 		Mendl
 		
-		!ff-palette-split0-init
+		!palette-split0-init
+		( !display-init )
 	}
 	.Console/read DEI 
 	[ ,&name-length LDR2 ] ;filename ADD2 STA
@@ -150,7 +154,6 @@ BRK
 @read-file ( -> )
 	;str/read print-str ;str/read-file print-str
 	;filename print-str Mendl
-	#0000 .Screen/vector DEO2
 
 	#0008 .bytes-expected STZ2
 	;detect-magic .on-bytes-received STZ2
@@ -161,7 +164,7 @@ BRK
 	Mfile-buffer-length .File/length DEO2
 
 	;file-buf ;read-buffer/window STA2
-	!read-buffer
+	;read-buffer .Screen/vector DEO2
 BRK
 
 
@@ -187,6 +190,7 @@ BRK
 			]
 		}
 		( not enough bytes )
+		( LIT ". Mcout )
 
 		;file-buf/end NEQ2 ?{
 			( buffer full )
@@ -194,8 +198,18 @@ BRK
 			;&cmd .System/expansion DEO2
 			POP2
 			Mfile-buffer-length SUB2 [ ,&window STR2 ]
+
+			( a good time to take a break? )
+			[ LIT &break-counter 00 ] INC
+			DUP ( #ff NEQ ) ?{
+				POP #00 [ ,&break-counter STR ]
+				( LIT ") Mcout )
+				BRK	
+			}
+			[ ,&break-counter STR ]
 			!read-buffer
 		}
+		#0000 .Screen/vector DEO2
 		.on-file-end LDZ2 JMP2
 BRK
 
@@ -277,6 +291,45 @@ JMP2r
 	;str/width print-str DUP2 Mprint-short Mendl
 
 	DUP2 .Screen/width DEO2 .img-w STZ2
+JMP2r
+
+
+@prepare-palette ( -- )
+	LIT "0 Mcout
+	;color0/b LDA ;color0/g LDA ;color0/r LDA Mprint-bgr
+	LIT "1 Mcout
+	;color1/b LDA ;color1/g LDA ;color1/r LDA Mprint-bgr
+	LIT "2 Mcout
+	;color2/b LDA ;color2/g LDA ;color2/r LDA Mprint-bgr
+	LIT "3 Mcout
+	;color3/b LDA ;color3/g LDA ;color3/r LDA Mprint-bgr
+
+	;color0/r LDA DUP ;pick-color/color0r STA #40 SFT 
+	;color1/r LDA DUP ;pick-color/color1r STA ORA [ ,&rhigh STR ]
+	;color2/r LDA DUP ;pick-color/color2r STA #40 SFT
+	;color3/r LDA DUP ;pick-color/color3r STA ORA [ ,&rlow STR ]
+	;color0/g LDA DUP ;pick-color/color0g STA #40 SFT 
+	;color1/g LDA DUP ;pick-color/color1g STA ORA [ ,&ghigh STR ]
+	;color2/g LDA DUP ;pick-color/color2g STA #40 SFT
+	;color3/g LDA DUP ;pick-color/color3g STA ORA [ ,&glow STR ]
+	!{
+		&r &rhigh 00 &rlow 00
+		&g &ghigh 00 &glow 00
+		&b &bhigh 00 &blow 00
+	}
+	;color0/b LDA DUP ;pick-color/color0b STA #40 SFT 
+	;color1/b LDA DUP ;pick-color/color1b STA ORA [ ,&bhigh STR ]
+	;color2/b LDA DUP ;pick-color/color2b STA #40 SFT
+	;color3/b LDA DUP ;pick-color/color3b STA ORA [ ,&blow STR ]
+
+	LIT "R Mcout [ ,&r LDR2 ] Mprint-short
+	LIT "G Mcout [ ,&g LDR2 ] Mprint-short
+	LIT "B Mcout [ ,&b LDR2 ] Mprint-short
+	Mendl
+
+	[ ,&r LDR2 ] .System/r DEO2
+	[ ,&g LDR2 ] .System/g DEO2
+	[ ,&b LDR2 ] .System/b DEO2
 JMP2r
 
 
@@ -488,20 +541,20 @@ JMP2r
 !fail
 
 
-@ff-palette-split0-init ( -> )
+@palette-split0-init ( -> )
 	Mpart0 part-init
 
-	;ff-palette-split0 .on-pixel-received STZ2
-	;ff-palette-split0-end .on-file-end STZ2
+	;palette-split0 .on-pixel-received STZ2
+	;palette-split0-end .on-file-end STZ2
 	;read-file .Screen/vector DEO2
 BRK
 
 
-@ff-palette-split0 ( r g b -- )
+@palette-split0 ( r g b -- )
 	Mpart0 part-process
 JMP2r
 
-@ff-palette-split0-end ( -> )
+@palette-split0-end ( -> )
 	Mendl
 	Mpart0 part-get-max-var
 	DUP #01 NEQ ?{
@@ -522,7 +575,7 @@ JMP2r
 	&done
 	Mpart0 part-debug
 
-	!ff-palette-split1-init 
+	!palette-split1-init 
 BRK
 
 
@@ -565,17 +618,17 @@ BRK
 JMP2r
 
 
-@ff-palette-split1-init ( -> )
+@palette-split1-init ( -> )
 	Mpart0 part-init
 	Mpart1 part-init
 
-	;ff-palette-split1 .on-pixel-received STZ2
-	;ff-palette-split1-end .on-file-end STZ2
+	;palette-split1 .on-pixel-received STZ2
+	;palette-split1-end .on-file-end STZ2
 	;read-file .Screen/vector DEO2
 BRK
 
 
-@ff-palette-split1 ( r g b -- )
+@palette-split1 ( r g b -- )
 	get-partition ?{
 		Mpart0 part-process 
 		JMP2r
@@ -583,7 +636,7 @@ BRK
 	Mpart1 part-process
 JMP2r
 
-@ff-palette-split1-end ( -> )
+@palette-split1-end ( -> )
 	Mpart0 part-get-max-var
 
 	DUP #01 NEQ ?{
@@ -653,13 +706,13 @@ JMP2r
 	Mpart2 part-debug
 	Mpart3 part-debug
 	
-	!ff-sum-colors-init
+	!sum-colors-init
 BRK
 
 
-@ff-sum-colors-init ( -- )
-	;ff-sum-colors .on-pixel-received STZ2
-	;ff-avg-colors .on-file-end STZ2
+@sum-colors-init ( -- )
+	;sum-colors .on-pixel-received STZ2
+	;avg-colors .on-file-end STZ2
 	;read-file .Screen/vector DEO2
 JMP2r
 
@@ -670,7 +723,7 @@ JMP2r
   avg value to &rh
   we then count "average of averages"
   )
-@ff-sum-colors ( r g b -- )
+@sum-colors ( r g b -- )
 	get-partition #00 SWP #40 SFT STH2
 	#00 SWP ;&b Msk+ LDAk2 ROT2 ADD2 SWP2 STA2
 	#00 SWP ;&g Msk+ LDAk2 ROT2 ADD2 SWP2 STA2
@@ -699,7 +752,7 @@ JMP2r
 	@sum3 [ &r $2 &rh $2 &g $2 &gh $2 &b $2 &bh $2 &n $2 &nh $2 ]
 
 
-@ff-avg-color ( {chan}* {n}* -- avg-color )
+@avg-color ( {chan}* {n}* -- avg-color )
 	STH2
 	#0000 SWP2 LDA2k ( low )
 	#0000 ROT2 INC2 INC2 LDA2 #0c lshift32 ( high )
@@ -717,81 +770,42 @@ JMP2r
 JMP2r
 
 
-@ff-avg-colors ( -> )
-	;ff-sum-colors/r ;ff-sum-colors/n ff-avg-color .color0/r STZ
-	;ff-sum-colors/g ;ff-sum-colors/n ff-avg-color .color0/g STZ
-	;ff-sum-colors/b ;ff-sum-colors/n ff-avg-color .color0/b STZ
+@avg-colors ( -> )
+	;sum-colors/r ;sum-colors/n avg-color .color0/r STZ
+	;sum-colors/g ;sum-colors/n avg-color .color0/g STZ
+	;sum-colors/b ;sum-colors/n avg-color .color0/b STZ
 
-	;sum1/r ;sum1/n ff-avg-color .color1/r STZ
-	;sum1/g ;sum1/n ff-avg-color .color1/g STZ
-	;sum1/b ;sum1/n ff-avg-color .color1/b STZ
+	;sum1/r ;sum1/n avg-color .color1/r STZ
+	;sum1/g ;sum1/n avg-color .color1/g STZ
+	;sum1/b ;sum1/n avg-color .color1/b STZ
 
-	;sum2/r ;sum2/n ff-avg-color .color2/r STZ
-	;sum2/g ;sum2/n ff-avg-color .color2/g STZ
-	;sum2/b ;sum2/n ff-avg-color .color2/b STZ
+	;sum2/r ;sum2/n avg-color .color2/r STZ
+	;sum2/g ;sum2/n avg-color .color2/g STZ
+	;sum2/b ;sum2/n avg-color .color2/b STZ
 
-	;sum3/r ;sum3/n ff-avg-color .color3/r STZ
-	;sum3/g ;sum3/n ff-avg-color .color3/g STZ
-	;sum3/b ;sum3/n ff-avg-color .color3/b STZ
+	;sum3/r ;sum3/n avg-color .color3/r STZ
+	;sum3/g ;sum3/n avg-color .color3/g STZ
+	;sum3/b ;sum3/n avg-color .color3/b STZ
 
 	prepare-palette
-	!ff-print-init
+	!display-init
 BRK
 
 
 
-( printing )
+( displaying )
 
 
-@ff-print-init ( -> )
-	;ff-print .on-pixel-received STZ2
+@display-init ( -> )
+	;display .on-pixel-received STZ2
 	;done .on-file-end STZ2
 	;read-file .Screen/vector DEO2
 BRK
 
 
-@ff-print ( r g b -- )
+@display ( r g b -- )
 	pick-color .Screen/pixel DEO
 	advance-screen-pos
-JMP2r
-
-
-@prepare-palette
-	LIT "0 Mcout
-	;color0/b LDA ;color0/g LDA ;color0/r LDA Mprint-bgr
-	LIT "1 Mcout
-	;color1/b LDA ;color1/g LDA ;color1/r LDA Mprint-bgr
-	LIT "2 Mcout
-	;color2/b LDA ;color2/g LDA ;color2/r LDA Mprint-bgr
-	LIT "3 Mcout
-	;color3/b LDA ;color3/g LDA ;color3/r LDA Mprint-bgr
-
-	;color0/r LDA DUP ;pick-color/color0r STA #40 SFT 
-	;color1/r LDA DUP ;pick-color/color1r STA ORA [ ,&rhigh STR ]
-	;color2/r LDA DUP ;pick-color/color2r STA #40 SFT
-	;color3/r LDA DUP ;pick-color/color3r STA ORA [ ,&rlow STR ]
-	;color0/g LDA DUP ;pick-color/color0g STA #40 SFT 
-	;color1/g LDA DUP ;pick-color/color1g STA ORA [ ,&ghigh STR ]
-	;color2/g LDA DUP ;pick-color/color2g STA #40 SFT
-	;color3/g LDA DUP ;pick-color/color3g STA ORA [ ,&glow STR ]
-	!{
-		&r &rhigh 00 &rlow 00
-		&g &ghigh 00 &glow 00
-		&b &bhigh 00 &blow 00
-	}
-	;color0/b LDA DUP ;pick-color/color0b STA #40 SFT 
-	;color1/b LDA DUP ;pick-color/color1b STA ORA [ ,&bhigh STR ]
-	;color2/b LDA DUP ;pick-color/color2b STA #40 SFT
-	;color3/b LDA DUP ;pick-color/color3b STA ORA [ ,&blow STR ]
-
-	LIT "R Mcout [ ,&r LDR2 ] Mprint-short
-	LIT "G Mcout [ ,&g LDR2 ] Mprint-short
-	LIT "B Mcout [ ,&b LDR2 ] Mprint-short
-	Mendl
-
-	[ ,&r LDR2 ] .System/r DEO2
-	[ ,&g LDR2 ] .System/g DEO2
-	[ ,&b LDR2 ] .System/b DEO2
 JMP2r
 
 
@@ -833,20 +847,6 @@ JMP2r
 JMP2r
 
 
-( @advance-pos ( -- continue ) )
-( 	( LIT "x Mcout .x LDZ2 Mprint-short ) )
-( 	( LIT "y Mcout .y LDZ2 Mprint-short Mendl ) )
-( 	.x LDZ2 INC2 .img-w LDZ2 NEQ2k ?{ )
-( 		POP2 POP2 #0000 .x STZ2 )
-( 		.y LDZ2 INC2 )
-( 		DUP2 .y STZ2 )
-( 		.img-h LDZ2 NEQ2 )
-( 	JMP2r } )
-( 	POP2 .x STZ2 )
-( 	#01 )
-( JMP2r )
-
-
 ( assumes screen auto )
 @advance-screen-pos ( -- )
 	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
@@ -862,6 +862,7 @@ JMP2r
 
 
 @done ( -- )
+	( #80 .System/state DEO BRK )
 	;str/end print-str
 JMP2r
 
@@ -1126,8 +1127,10 @@ JMP2r
 
 
 ( 10 buffers, 8 needed to generate .chr files, plus 2 for dithering )
+( 0x0c00 = 3072 bytes; 3072 / 3 * 2 = 2048 pixels per line max )
+( 0x0c00 * 10 = 0x7800 )
 @line-buffer [
-	&0 $0c00 &1 $0c00 &2 $0c00 &3 $0c00 &4 $0c00 
-	&5 $0c00 &6 $0c00 &7 $0c00 &8 $0c00
+	$0c00 $0c00 $0c00 $0c00 $0c00 
+	$0c00 $0c00 $0c00 $0c00 $0c00
 ]
 @end
