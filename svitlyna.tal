@@ -17,11 +17,11 @@
 
 |0000 
 
-@x $2 @y $2
-@decode-x $2 @decode-y $2 @line-buf $2
+@x $2 @y $2 @xfrac $2 @yfrac $2
+@decode-x $2 @decode-y $2 @line-buf $1
 @img-w $2 @img-h $2 @img-size $4
 
-%Mmax-width { #0800 }
+%Mmax-width { #1000 }
 %Mmax-height { #1000 }
 %Mmax-name-length { #07ff }
 
@@ -30,7 +30,7 @@
 @color2 [ &r $1 &g $1 &b $1 ]
 @color3 [ &r $1 &g $1 &b $1 ]
 
-%Mfile-buffer-length { #0800 }
+%Mfile-buffer-length { #4000 }
 @bytes-expected $2
 
 @on-bytes-received $2
@@ -78,6 +78,10 @@
 	[ #0505 #05 ] .color1/b STZ .color1/g STZ .color1/r STZ
 	[ #0909 #09 ] .color2/b STZ .color2/g STZ .color2/r STZ
 	[ #0f0f #0f ] .color3/b STZ .color3/g STZ .color3/r STZ
+	( [ #0000 #04 ] .color0/b STZ .color0/g STZ .color0/r STZ )
+	( [ #0800 #00 ] .color1/b STZ .color1/g STZ .color1/r STZ )
+	( [ #000a #00 ] .color2/b STZ .color2/g STZ .color2/r STZ )
+	( [ #0f0f #0f ] .color3/b STZ .color3/g STZ .color3/r STZ )
 	prepare-palette
 	;str/init print-str
 
@@ -95,22 +99,6 @@
 
 	;read-argument .Console/vector DEO2
 BRK
-
-
-( just for testing )
-( @echo-file ( {buffer}* -> ) )
-( 	LIT "( Mcout LIT "0 Mcout LIT ") Mcout )
-( 	DUP2 LDA Mcout INC2 )
-( 	LIT "( Mcout LIT "1 Mcout LIT ") Mcout )
-( 	DUP2 LDA Mcout INC2 )
-( 	LIT "( Mcout LIT "2 Mcout LIT ") Mcout )
-( 	DUP2 LDA Mcout INC2 )
-( 	LIT "( Mcout LIT "3 Mcout LIT ") Mcout )
-( 	DUP2 LDA Mcout INC2 )
-( 	LIT "( Mcout LIT "4 Mcout LIT ") Mcout )
-( 	LDA Mcout  )
-( JMP2r )
-
 
 
 @on-stdin ( -> )
@@ -139,8 +127,8 @@ BRK
 		Mendl
 		
 		#00 .part-split-step STZ
-		!palette-split-init
-		( !display-init )
+		( !palette-split-init )
+		!display-init
 	}
 	.Console/read DEI 
 	[ ,&name-length LDR2 ] ;filename ADD2 STA
@@ -204,9 +192,8 @@ BRK
 
 			( a good time to take a break? )
 			[ LIT &break-counter 00 ] INC
-			DUP ( #ff NEQ ) ?{
+			DUP #40 NEQ ?{
 				POP #00 [ ,&break-counter STR ]
-				( LIT ") Mcout )
 				BRK	
 			}
 			[ ,&break-counter STR ]
@@ -260,8 +247,8 @@ JMP2r
 ( farbfeld uses 16-bit depth, not alpha-premultiplied ) 
 ( we don't load the lower 8 bits )
 @ff-next-pixel ( {buffer}* -- )
-	( 255 INC becomes 0, so lambda isn't skipped -> opaque )
 	STH2k #0006 ADD2 LDA ( alpha )
+	( 255 INC becomes 0, so lambda isn't skipped -> opaque )
 	DUP INC ?{
 		( alpha is zero )
 		POP
@@ -272,11 +259,11 @@ JMP2r
 		JMP2r
 	}
 	#00 SWP
-	DUP2 #00 STH2kr     LDA MUL2 POP #04 SFT ( 00 aa ar )
+	DUP2 #00 STH2kr     LDA MUL2 POP #04 SFT ( 00 aa a*r )
 	ROT ROT
-	DUP2 #00 #0002 Msk+ LDA MUL2 POP #04 SFT ( 00 aa ag )
+	DUP2 #00 #0002 Msk+ LDA MUL2 POP #04 SFT ( 00 aa a*g )
 	ROT ROT
-	     #00 #0004 Ms+  LDA MUL2 POP #04 SFT ( ar ag ab )
+	     #00 #0004 Ms+  LDA MUL2 POP #04 SFT ( ar ag a*b )
 	.on-pixel-received LDZ2 JSR2
 JMP2r
 
@@ -340,20 +327,27 @@ JMP2r
 
 ( image processing )
 
-( see bottom of file )
+
+( partitioning color space, via median cut algorithm )
+
+( see bottom of file for file structure )
 %Mpart-size { #00ca } 
 
 
 @part-debug ( part -- )
 	#00 OVR Mpart-size MUL2 STH2
 	( { "part 20 00 } STH2r print-str DUP print-byte Mcout )
-	LIT "R Mcout ;part/r-beg Msk+ LDA2 Mprint-short
-	LIT "G Mcout ;part/g-beg Msk+ LDA2 Mprint-short
-	LIT "B Mcout ;part/b-beg Msk+ LDA2 Mprint-short Mendl
+	LIT "R Mcout ;part/r-beg Msk+ LDA2 
+	SWP print-byte LIT "- Mcout print-byte LIT ", Mcout
+	LIT "G Mcout ;part/g-beg Msk+ LDA2
+	SWP print-byte LIT "- Mcout print-byte LIT ", Mcout
+	LIT "B Mcout ;part/b-beg Msk+ LDA2
+	SWP print-byte LIT "- Mcout print-byte Mendl
 
-	#03 NEQ2 ?{ POP2r JMP2r }
-	LIT "C Mcout ;part/count Msk+ LDA2k Mprint-short
-	INC2 INC2 LDA2 Mprint-short Mendl
+	.part-split-step LDZ INC LTH ?{ POP2r JMP2r }
+
+	LIT "C Mcout ;part/count Msk+ 
+	LDA2k Mprint-short INC2 INC2 LDA2 Mprint-short Mendl
 
 	#0000 
 	LIT "S Mcout LIT "R Mcout Mendl
@@ -405,7 +399,6 @@ JMP2r
 
 
 @part-init ( part -- )
-	LIT "I Mcout
 	#00 SWP Mpart-size MUL2 STH2
 	#0000 ;part/count Msk+ STA2k
 	INC2 INC2 STA2
@@ -418,7 +411,6 @@ JMP2r
 JMP2r
 
 
-( get color variation within partition )
 @part-add-pixel ( r g b part -- )
 	#00 SWP Mpart-size MUL2 STH2
 	#20 SFT #00 SWP ;part/b-sort Msk+ ADD2 inc32-addr
@@ -428,28 +420,17 @@ JMP2r
 JMP2r 
 
 
+( get color variation within partition )
 @part-get-max-var ( part -- max-var-chan max-var )
 	#00 SWP Mpart-size MUL2 
 	STH2
+	( load 32-bit count )
+	;part/count Msk+ LDA2k SWP2 INC2 INC2 LDA2 
+	non-zero32 ?{ POP2r #0000 JMP2r }
 
-	( find index of first non-zero element )
-	#00
-	&find-r-min
-		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+
-		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-r-min
-		INC
-	!&find-r-min
-	&found-r-min
-	( find index of last non-zero element + 1 )
-	#0f
-	&find-r-max
-		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+
-		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-r-max
-		#01 SUB
-	!&find-r-max
-	&found-r-max
-	SWP SUB
-	LIT "V Mcout LIT "R Mcout DUP print-byte
+	( order of preference:
+	  if green has equal variation to red or blue, prefer green
+	  if red has equal variation to blue, prefer red )
 
 	( find index of first non-zero element )
 	#00
@@ -472,6 +453,25 @@ JMP2r
 
 	( find index of first non-zero element )
 	#00
+	&find-r-min
+		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+
+		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-r-min
+		INC
+	!&find-r-min
+	&found-r-min
+	( find index of last non-zero element + 1 )
+	#0f
+	&find-r-max
+		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+
+		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-r-max
+		#01 SUB
+	!&find-r-max
+	&found-r-max
+	SWP SUB
+	LIT "V Mcout LIT "R Mcout DUP print-byte
+
+	( find index of first non-zero element )
+	#00
 	&find-b-min
 		#00 OVR #20 SFT ;part/b-sort ADD2 Msk+
 		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-b-min
@@ -488,22 +488,23 @@ JMP2r
 	&found-b-max
 	SWP SUB
 	LIT "V Mcout LIT "B Mcout DUP print-byte
+	Mendl
+
 
 	POP2r
 
-	( wst: rvar gvar bvar )
-	LIT "] Mdebug32
 	#03 STH
-	LTHk ?{ POPr #02 STH SWP } NIP
-	LTHk ?{ POPr #01 STH SWP } NIP
-	STHr 
-	SWP
-	LIT "[ Mdebug-short
+	( wst: gvar rvar max-var | rst: max-var-chan )
+	LTHk ?{ POPr #01 STH SWP } NIP 
+	( wst: gvar max-var | rst: max-var-chan )
+	LTHk ?{ POPr #02 STH SWP } NIP 
+	
+	&done
+	STHr SWP
 JMP2r
 
 
 @part-get-median ( {sorted}* {count}* -- median )
-	Mendl
 	LDA2k SWP2 INC2 INC2 LDA2 #01 shift32-0
 	[ ,&halfl STR2 ] [ ,&halfh STR2 ]
 	DUP2 #0000 #0000 ROT2
@@ -524,61 +525,105 @@ JMP2r
 !fail
 
 
-@get-partition ( r g b -- r g b p )
-	( LIT "( Mcout .part-split-step LDZ print-byte )
-	( LIT "P Mdebug-rgb LIT "= Mcout )
-	.part-split-step LDZ ?{ ( this part is last now ) #00 JMP2r }
+@get-partition-optimize
+	#00 ;get-partition/check0 STA
 
-	DUP ;part/b-beg LDA SWP GTH ?&part1
-	DUP ;part/b-end LDA LTH ?{ !&part1 }
+	.part-split-step LDZ
+	DUP #01 LTH ?{
+		#01 ;get-partition/check0 STA
 
-	SWP DUP ;part/g-beg LDA SWP GTH ?{ !&g0 } SWP !&part1
-	&g0 DUP ;part/g-end LDA LTH ?{ SWP !&part1 } SWP
+		;part/r-beg LDA ;get-partition/part0-r-beg STA
+		;part/g-beg LDA ;get-partition/part0-g-beg STA
+		;part/b-beg LDA ;get-partition/part0-b-beg STA
+		;part/r-end LDA ;get-partition/part0-r-end STA
+		;part/g-end LDA ;get-partition/part0-g-end STA
+		;part/b-end LDA ;get-partition/part0-b-end STA
 
-	ROT DUP ;part/r-beg LDA SWP GTH ?{ !&r0 } ROT ROT !&part1
-	&r0 DUP ;part/r-end LDA LTH ?{ ROT ROT !&part1 } ROT ROT
-	#00 JMP2r	
+		#00 ;get-partition/check1 STA
+	}
+	DUP #02 LTH ?{
+		#01 ;get-partition/check1 STA
+
+		;part1/r-beg LDA ;get-partition/part1-r-beg STA
+		;part1/g-beg LDA ;get-partition/part1-g-beg STA
+		;part1/b-beg LDA ;get-partition/part1-b-beg STA
+		;part1/r-end LDA ;get-partition/part1-r-end STA
+		;part1/g-end LDA ;get-partition/part1-g-end STA
+		;part1/b-end LDA ;get-partition/part1-b-end STA
+
+		#00 ;get-partition/check2 STA
+	}
+	#03 LTH ?{ 
+		#01 ;get-partition/check2 STA
+
+		;part2/r-beg LDA ;get-partition/part2-r-beg STA
+		;part2/g-beg LDA ;get-partition/part2-g-beg STA
+		;part2/b-beg LDA ;get-partition/part2-b-beg STA
+		;part2/r-end LDA ;get-partition/part2-r-end STA
+		;part2/g-end LDA ;get-partition/part2-g-end STA
+		;part2/b-end LDA ;get-partition/part2-b-end STA
+	}
+JMP2r
+
+
+@get-partition ( r g b -- r g b part )
+	[ LIT &check0 $1 ] ?{ #00 JMP2r }
+
+	ROTk ( r g b g b r )
+	DUP [ LIT &part0-r-beg $1 ] LTH ?{ !&r0 } POP2 POP !&part1
+	&r0 [ LIT &part0-r-end $1 ] LTH ?{ POP2 !&part1 }
+
+	DUP [ LIT &part0-b-beg $1 ] LTH ?{ !&b0 } POP2 !&part1
+	&b0 [ LIT &part0-b-end $1 ] LTH ?{ POP !&part1 }
+
+	DUP [ LIT &part0-g-beg $1 ] LTH ?{ !&g0 } POP !&part1
+	&g0 [ LIT &part0-g-end $1 ] LTH ?{ !&part1 }
+	#00 JMP2r
 
 	&part1
-	.part-split-step LDZ #01 GTH ?{ #01 JMP2r }
+	[ LIT &check1 $1 ] ?{ #01 JMP2r }
 
-	DUP ;part1/b-beg LDA SWP GTH ?&part2
-	DUP ;part1/b-end LDA LTH ?{ !&part2 }
+	ROTk ( r g b g b r )
+	DUP [ LIT &part1-r-beg $1 ] LTH ?{ !&r1 } POP2 POP !&part2
+	&r1 [ LIT &part1-r-end $1 ] LTH ?{ POP2 !&part2 }
 
-	SWP DUP ;part1/g-beg LDA SWP GTH ?{ !&g1 } SWP !&part2
-	&g1 DUP ;part1/g-end LDA LTH ?{ SWP !&part2 } SWP
+	DUP [ LIT &part1-b-beg $1 ] LTH ?{ !&b1 } POP2 !&part2
+	&b1 [ LIT &part1-b-end $1 ] LTH ?{ POP !&part2 }
 
-	ROT DUP ;part1/r-beg LDA SWP GTH ?{ !&r1 } ROT ROT !&part2
-	&r1 DUP ;part1/r-end LDA LTH ?{ ROT ROT !&part2 } ROT ROT
-	#01 JMP2r	
+	DUP [ LIT &part1-g-beg $1 ] LTH ?{ !&g1 } POP !&part2
+	&g1 [ LIT &part1-g-end $1 ] LTH ?{ !&part2 }
+	#01 JMP2r
 
 	&part2
-	.part-split-step LDZ #02 GTH ?{ #02 JMP2r }
+	[ LIT &check2 $1 ] ?{ #02 JMP2r }
 
-	DUP ;part2/b-beg LDA SWP GTH ?&part3
-	DUP ;part2/b-end LDA LTH ?{ !&part3 }
+	ROTk ( r g b g b r )
+	DUP [ LIT &part2-r-beg $1 ] LTH ?{ !&r2 } POP2 POP !&part3
+	&r2 [ LIT &part2-r-end $1 ] LTH ?{ POP2 !&part3 }
 
-	SWP DUP ;part2/g-beg LDA SWP GTH ?{ !&g2 } SWP !&part3
-	&g2 DUP ;part2/g-end LDA LTH ?{ SWP !&part3 } SWP
+	DUP [ LIT &part2-b-beg $1 ] LTH ?{ !&b2 } POP2 !&part3
+	&b2 [ LIT &part2-b-end $1 ] LTH ?{ POP !&part3 }
 
-	ROT DUP ;part2/r-beg LDA SWP GTH ?{ !&r2 } ROT ROT !&part3
-	&r2 DUP ;part2/r-end LDA LTH ?{ ROT ROT !&part3 } ROT ROT
-	#02 JMP2r	
+	DUP [ LIT &part2-g-beg $1 ] LTH ?{ !&g2 } POP !&part3
+	&g2 [ LIT &part2-g-end $1 ] LTH ?{ !&part3 }
+	#02 JMP2r
 
 	&part3
+	( LIT "3 Mdebug-rgb Mendl )
 	#03
 JMP2r
 
 
 @palette-split-init ( -> )
-	Mendl
+	get-partition-optimize
+
 	#00 part-init
 	.part-split-step LDZ DUP ?{
 		#10 ;part/r-end STA
 		#10 ;part/g-end STA
 		#10 ;part/b-end STA
 	}
-	DUP #01 LTH ?{ 
+	DUP #01 LTH ?{
 		#01 part-init 
 		#02 LTH ?{
 			#02 part-init
@@ -593,33 +638,45 @@ BRK
 
 @palette-split ( r g b -- )
 	get-partition
+	( LIT "R Mdebug-byte Mendl )
 	DUP ?{
-		( LIT "0 Mcout Mendl )
-		part-add-pixel 
+		part-add-pixel ( 0 )
 		JMP2r
 	}
 	#01 GTHk ?{
 		POP
-		( LIT "1 Mcout Mendl )
-		part-add-pixel
+		part-add-pixel ( 1 )
 		JMP2r
 	}
-	( LIT "2 Mcout Mendl )
-	POP part-add-pixel
+	POP
+	#02 NEQk ?{
+		POP
+		part-add-pixel ( 2 )
+		JMP2r
+	} 
+	POP
+	part-add-pixel
+	JMP2r
 JMP2r
 
 @palette-split-end ( -> )
+	Mendl Mendl Mendl
+	#00 part-debug
+	#01 part-debug
+	#02 part-debug
+	#03 part-debug
+
+	( find partition with largest color variation )
+
 	#00 DUP part-get-max-var
 	( max-var-part max-var-chan max-var )
 	.part-split-step LDZ ?{ !&found-max-var }
 	#01 part-get-max-var 
-	LIT "T Mdebug32
 	ROT LTHk ?{
 		( o-var-part o-var-chan max-var-chan max-var o-var )
 		POP STH2 POP2 #01 STH2r !&part2-var
 	}
 	NIP NIP
-	LIT "U Mdebug32
 	&part2-var
 	.part-split-step LDZ #01 GTH ?{ !&found-max-var }
 	#02 part-get-max-var ROT LTHk ?{
@@ -635,26 +692,21 @@ JMP2r
 	}
 	NIP NIP
 	&found-max-var
-	LIT "V Mdebug-byte
+	.part-split-step LDZ LIT "F Mcout print-byte
 	POP
-	LIT "C Mdebug-byte
-	SWP LIT "P Mdebug-byte SWP
+
+	( split partition )
 
 	DUP #01 NEQ ?{
 		POP
-		LIT "+ Mdebug-byte
 		#00 .part-split-step LDZ INC Mpart-size MUL2 
-		LIT "^ Mdebug-short
 		STH2
-		LIT "+ Mdebug-byte
 		#00 OVR Mpart-size MUL2
-		LIT "$ Mdebug-short
 		STH2
 		( rst: dest-part-offset* src-part-offset* )
 
 		;part/r-end Msk+ LDA SWP2r ;part/r-end Msk+ STA SWP2r
 		;part/r-sort Msk+ ;part/count Msk+ part-get-median DUP 
-		LIT "M Mdebug-byte
 		;part/r-end Msk+ STA SWP2r ;part/r-beg Msk+ STA SWP2r
 
 		;part/g-beg Msk+ LDA SWP2r ;part/g-beg Msk+ STA SWP2r
@@ -664,7 +716,6 @@ JMP2r
 		;part/b-end Msk+ LDA SWP2r ;part/b-end Msk+ STA SWP2r
 		!&split-done
 	}
-	LIT "R Mdebug-short
 	DUP #02 NEQ ?{
 		POP
 		#00 .part-split-step LDZ INC Mpart-size MUL2 STH2
@@ -676,7 +727,6 @@ JMP2r
 
 		;part/g-end Msk+ LDA SWP2r ;part/g-end Msk+ STA SWP2r
 		;part/g-sort Msk+ ;part/count Msk+ part-get-median DUP 
-		LIT "M Mdebug-byte
 		;part/g-end Msk+ STA SWP2r ;part/g-beg Msk+ STA SWP2r
 
 		;part/b-beg Msk+ LDA SWP2r ;part/b-beg Msk+ STA SWP2r
@@ -696,18 +746,15 @@ JMP2r
 
 	;part/b-end Msk+ LDA SWP2r ;part/b-end Msk+ STA SWP2r
 	;part/b-sort Msk+ ;part/count Msk+ part-get-median DUP 
-	LIT "M Mdebug-byte
 	;part/b-end Msk+ STA SWP2r ;part/b-beg Msk+ STA SWP2r
 
 	&split-done
 	POP2r POP2r
 
-	#00 part-debug
-	#01 part-debug	
+	( optimize routines )
+
 	.part-split-step LDZ #01 LTH ?{
-		#02 part-debug
 		.part-split-step LDZ #02 LTH ?{
-			#03 part-debug
 			#03 .part-split-step STZ
 			!sum-colors-init
 		}
@@ -720,93 +767,66 @@ BRK
 
 
 @sum-colors-init ( -- )
-	Mendl
-	Mendl
-	Mendl
-	Mendl
-	Mendl
-	#00 part-debug
-	#01 part-debug
-	#02 part-debug
-	#03 part-debug
-	;sum-colors .on-pixel-received STZ2
+	#00 part-init
+	#01 part-init
+	#02 part-init
+	#03 part-init
+	get-partition-optimize
+
+	;palette-split .on-pixel-received STZ2
 	;avg-colors .on-file-end STZ2
 	;read-file .Screen/vector DEO2
 JMP2r
 
 
-( &r &g &b are 16-bit values containing sum of values of colors,
-  &n is count of values 
-  2^12 values are storable; when n reaches 4096 we divide and add
-  avg value to &rh
-  we then count "average of averages"
-  )
-@sum-colors ( r g b -- )
-	get-partition 
-	#00 SWP #40 SFT STH2
-	#00 SWP ;&b Msk+ LDAk2 ROT2 ADD2 SWP2 STA2
-	#00 SWP ;&g Msk+ LDAk2 ROT2 ADD2 SWP2 STA2
-	#00 SWP ;&r Msk+ LDAk2 ROT2 ADD2 SWP2 STA2
-	;&n Msk+ LDA2 INC2
-	DUP2 #1000 LTH2 ?{
-		POP2
-		;&r Msk+ LDA2 #0c SFT2 ;&rh Msk+ LDA2 ADD2 
-		;&rh Msk+ STA2 #0000 ;&r Msk+ STA2
-		;&g Msk+ LDA2 #0c SFT2 ;&gh Msk+ LDA2 ADD2 
-		;&gh Msk+ STA2 #0000 ;&g Msk+ STA2
-		;&b Msk+ LDA2 #0c SFT2 ;&bh Msk+ LDA2 ADD2 
-		;&bh Msk+ STA2 #0000 ;&b Msk+ STA2
-		#0000 ;&n Msk+ STA2 ;&nh Msk+ LDA2k INC2 
-		SWP2 STA2
-		!&done
-	} 
-	;&n Msk+ STA2
-
-	&done
-	POP2r
-JMP2r
-	&r $2 &rh $2 &g $2 &gh $2 &b $2 &bh $2 &n $2 &nh $2
-	@sum1 [ &r $2 &rh $2 &g $2 &gh $2 &b $2 &bh $2 &n $2 &nh $2 ]
-	@sum2 [ &r $2 &rh $2 &g $2 &gh $2 &b $2 &bh $2 &n $2 &nh $2 ]
-	@sum3 [ &r $2 &rh $2 &g $2 &gh $2 &b $2 &bh $2 &n $2 &nh $2 ]
-
 
 @avg-color ( {chan}* {n}* -- avg-color )
-	STH2
-	#0000 SWP2 LDA2k ( low )
-	#0000 ROT2 INC2 INC2 LDA2 #0c lshift32 ( high )
-	add32
-
-	#0000 STH2r
-	LDA2k ( low n )
-	#0000 ROT2 INC2 INC2 LDA2 #0c lshift32 ( high n )
-	add32
-	LIT "N Mdebug32
-	div32
-	LIT "A Mdebug32
-
-	SWP #00 EQU ?{ !fail }
-	SWP #00 EQU ?{ !fail }
-	SWP #00 EQU ?{ !fail }
+	STH2 STH2
+	#0000 #0000 #0000
+	( sum** index* | {n}* {chan}* )
+	&loop
+		DUP2 #0004 MUL2 Msk+ ( count addr for index )
+		SWP2 STH2
+		LDA2k SWP2 INC2 INC2 LDA2 ( load 32-bit count )
+		#0000 STH2kr mul32 ( multiply by index )
+		add32
+		STH2r INC2
+		DUP2 #0010 NEQ2 ?{
+			POP2 POP2r
+			( sum** | {n}* )
+			STH2r
+			LDA2k SWP2 INC2 INC2 LDA2
+			div32
+			( clear high 24 bits and check they're zero )
+			SWP2 #0000 EQU2 ?{ !fail }
+			SWP #00 EQU ?{ !fail }
+			JMP2r
+		}
+	!&loop
 JMP2r
 
 
 @avg-colors ( -> )
-	;sum-colors/r ;sum-colors/n avg-color .color0/r STZ
-	;sum-colors/g ;sum-colors/n avg-color .color0/g STZ
-	;sum-colors/b ;sum-colors/n avg-color .color0/b STZ
+	#00 part-debug
+	#01 part-debug
+	#02 part-debug
+	#03 part-debug
 
-	;sum1/r ;sum1/n avg-color .color1/r STZ
-	;sum1/g ;sum1/n avg-color .color1/g STZ
-	;sum1/b ;sum1/n avg-color .color1/b STZ
+	;part/r-sort ;part/count avg-color .color0/r STZ
+	;part/g-sort ;part/count avg-color .color0/g STZ
+	;part/b-sort ;part/count avg-color .color0/b STZ
 
-	;sum2/r ;sum2/n avg-color .color2/r STZ
-	;sum2/g ;sum2/n avg-color .color2/g STZ
-	;sum2/b ;sum2/n avg-color .color2/b STZ
+	;part1/r-sort ;part1/count avg-color .color1/r STZ
+	;part1/g-sort ;part1/count avg-color .color1/g STZ
+	;part1/b-sort ;part1/count avg-color .color1/b STZ
 
-	;sum3/r ;sum3/n avg-color .color3/r STZ
-	;sum3/g ;sum3/n avg-color .color3/g STZ
-	;sum3/b ;sum3/n avg-color .color3/b STZ
+	;part2/r-sort ;part2/count avg-color .color2/r STZ
+	;part2/g-sort ;part2/count avg-color .color2/g STZ
+	;part2/b-sort ;part2/count avg-color .color2/b STZ
+
+	;part3/r-sort ;part3/count avg-color .color3/r STZ
+	;part3/g-sort ;part3/count avg-color .color3/g STZ
+	;part3/b-sort ;part3/count avg-color .color3/b STZ
 
 	prepare-palette
 	!display-init
@@ -832,22 +852,21 @@ JMP2r
 
 ( chooses closest color from palette )
 @pick-color ( r g b -- c )
-	ROTk ROTk ROTk 
-	( r g b g b r b r g r g b )
-	[ LIT &color0b $1 ] GTHk ?{ SWP } SUB
+	ROTk ( r g b g b r )
+	[ LIT &color0r $1 ] GTHk ?{ SWP } SUB
+	SWP [ LIT &color0b $1 ] GTHk ?{ SWP } SUB ADD
 	SWP [ LIT &color0g $1 ] GTHk ?{ SWP } SUB ADD
-	SWP [ LIT &color0r $1 ] GTHk ?{ SWP } SUB ADD
-	DUP ?{ ( diff is 0 ) POP2 POP2 POP2 POP2 POP2 #00 JMP2r }
+	DUP ?{ ( diff is 0 ) POP2 POP2 #00 JMP2r }
 	[ ,&diff0 STR ]
 
-	( r g b g b r b r g )
-	[ LIT &color1g $1 ] GTHk ?{ SWP } SUB
-	SWP [ LIT &color1r $1 ] GTHk ?{ SWP } SUB ADD
+	ROTk ( r g b g b r )
+	[ LIT &color1r $1 ] GTHk ?{ SWP } SUB
 	SWP [ LIT &color1b $1 ] GTHk ?{ SWP } SUB ADD
-	DUP ?{ ( diff is 0 ) POP2 POP2 POP2 POP #01 JMP2r }
+	SWP [ LIT &color1g $1 ] GTHk ?{ SWP } SUB ADD
+	DUP ?{ ( diff is 0 ) POP2 POP2 #01 JMP2r }
 	[ ,&diff1 STR ]
 
-	( r g b g b r )
+	ROTk ( r g b g b r )
 	[ LIT &color2r $1 ] GTHk ?{ SWP } SUB
 	SWP [ LIT &color2b $1 ] GTHk ?{ SWP } SUB ADD
 	SWP [ LIT &color2g $1 ] GTHk ?{ SWP } SUB ADD
@@ -973,10 +992,6 @@ JMP2r
 @bitcount32 ( x** -> n^ )
     SWP2 bitcount16 DUP ?{ POP !bitcount16 } #10 NIP2 ADD JMP2r
 
-( x == 0 )
-@is-zero32 ( x** -> bool^ )
-    ORA2 #0000 EQU2 JMP2r
-
 ( x != 0 )
 @non-zero32 ( x** -> bool^ )
     ORA2 ORA JMP2r
@@ -1013,14 +1028,14 @@ JMP2r
     !add32
 
 ( ( x * y ) )
-( @mul32 ( x** y** -> z** ) )
-(     ROT2k ( x0* x1* y0* y1* y0* y1* x1* ) )
-(     mul16 ,&z1 STR2 ,&z0 STR2 POP2 ( x0* x1* y0* y1* ; sum = [x1*y1] ) )
-(     STH2 ROT2 STH2                 ( x1* y0* [y1* x0*] ) )
-(     MUL2r MUL2 STH2r ADD2          ( x1*y0+y1*x0* ) )
-(     ( [x0*y0]<<32 will completely overflow ) )
-(     LIT2 [ &z0 $2 ] ADD2 ( sum += [x0*y1+x1*y0]<<16 ) )
-(     LIT2 [ &z1 $2 ] JMP2r )
+@mul32 ( x** y** -> z** )
+    ROT2k ( x0* x1* y0* y1* y0* y1* x1* )
+    mul16 ,&z1 STR2 ,&z0 STR2 POP2 ( x0* x1* y0* y1* ; sum = [x1*y1] )
+    STH2 ROT2 STH2                 ( x1* y0* [y1* x0*] )
+    MUL2r MUL2 STH2r ADD2          ( x1*y0+y1*x0* )
+    ( [x0*y0]<<32 will completely overflow )
+    LIT2 [ &z0 $2 ] ADD2 ( sum += [x0*y1+x1*y0]<<16 )
+    LIT2 [ &z1 $2 ] JMP2r
 
 ( x >> n )
 @rshift32 ( x** n^ -> x>>n )
@@ -1177,18 +1192,22 @@ JMP2r
 	&r-beg 00 &r-end 00
 	&g-beg 00 &g-end 00
 	&b-beg 00 &b-end 00
+	( radix-sorted lists of color values )
+	&count $4
+	&r-sort $40 &g-sort $40 &b-sort $40
 ]
 
 @filename "image.ff $0800
 @file-buf-pre $20
-@file-buf [ $07e0 &pre-end $20 &end ]
+@file-buf [ $3fe0 &pre-end $20 &end ]
 
 
-( 10 buffers, 8 needed to generate .chr files, plus 2 for dithering )
-( 0x0c00 = 3072 bytes; 3072 / 3 * 2 = 2048 pixels per line max )
-( 0x0c00 * 10 = 0x7800 )
+( 3 line buffers, for dithering )
+( 0x1800 = 6144 bytes; 6144 / 3 * 2 = 4096 pixels per line max )
+( 0x1800 * 3 = 0x4800 )
 @line-buffer [
-	$0c00 $0c00 $0c00 $0c00 $0c00 
-	$0c00 $0c00 $0c00 $0c00 $0c00
+	$2 &1 $1800 $2
+	$2 &2 $1800 $2
+	$2 &3 $1800 $2
 ]
 @end
