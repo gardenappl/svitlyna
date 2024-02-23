@@ -17,18 +17,28 @@
 
 |0000 
 
-@x $2 @y $2 @xfrac $2 @yfrac $2
-@decode-x $2 @decode-y $2 @line-buf $1
+( color channels )
+%Mr { #00 } %Mg { #01 } %Mb { #02 }
+
+@decode-x $2 @decode-y $2 
+@xfrac $2 @yfrac $2
 @img-w $2 @img-h $2 @img-size $4
 
 %Mmax-width { #1000 }
 %Mmax-height { #1000 }
 %Mmax-name-length { #07ff }
 
+( 4-bit color, used for most processing ops )
 @color0 [ &r $1 &g $1 &b $1 ]
 @color1 [ &r $1 &g $1 &b $1 ]
 @color2 [ &r $1 &g $1 &b $1 ]
 @color3 [ &r $1 &g $1 &b $1 ]
+
+( 7-bit color, used for dithering )
+@color0-7 [ &r $1 &g $1 &b $1 ]
+@color1-7 [ &r $1 &g $1 &b $1 ]
+@color2-7 [ &r $1 &g $1 &b $1 ]
+@color3-7 [ &r $1 &g $1 &b $1 ]
 
 %Mfile-buffer-length { #4000 }
 @bytes-expected $2
@@ -64,8 +74,10 @@
 	STHr DUP print-byte Mendl
 }
 
+( common pattern for adding offset to pointer )
 %Msk+ { STH2kr ADD2 }
 %Ms+ { STH2r ADD2 }
+%Mload32 { LDA2k SWP2 INC2 INC2 LDA2 }
 
 
 |0100
@@ -74,15 +86,15 @@
 	#1234 ;end STA2
 	;end LDA2 #1234 EQU2 ?{ ;str/memory-error !fail }
 
-	[ #0000 #00 ] .color0/b STZ .color0/g STZ .color0/r STZ
-	[ #0505 #05 ] .color1/b STZ .color1/g STZ .color1/r STZ
-	[ #0909 #09 ] .color2/b STZ .color2/g STZ .color2/r STZ
-	[ #0f0f #0f ] .color3/b STZ .color3/g STZ .color3/r STZ
-	( [ #0000 #04 ] .color0/b STZ .color0/g STZ .color0/r STZ )
-	( [ #0800 #00 ] .color1/b STZ .color1/g STZ .color1/r STZ )
-	( [ #000a #00 ] .color2/b STZ .color2/g STZ .color2/r STZ )
+	( [ #0000 #00 ] .color0/b STZ .color0/g STZ .color0/r STZ )
+	( [ #0505 #05 ] .color1/b STZ .color1/g STZ .color1/r STZ )
+	( [ #0909 #09 ] .color2/b STZ .color2/g STZ .color2/r STZ )
 	( [ #0f0f #0f ] .color3/b STZ .color3/g STZ .color3/r STZ )
-	prepare-palette
+	( [ #0000 #04 ] .color0/b STZ .color0/g STZ .color0/r STZ )
+	( [ #0c00 #00 ] .color1/b STZ .color1/g STZ .color1/r STZ )
+	( [ #0008 #00 ] .color2/b STZ .color2/g STZ .color2/r STZ )
+	( [ #0f0f #0f ] .color3/b STZ .color3/g STZ .color3/r STZ )
+	( prepare-palette )
 	;str/init print-str
 
 	#01 .Screen/auto DEO
@@ -127,8 +139,8 @@ BRK
 		Mendl
 		
 		#00 .part-split-step STZ
-		( !palette-split-init )
-		!display-init
+		!palette-split-init
+		( !display-init )
 	}
 	.Console/read DEI 
 	[ ,&name-length LDR2 ] ;filename ADD2 STA
@@ -252,18 +264,18 @@ JMP2r
 	DUP INC ?{
 		( alpha is zero )
 		POP
-		STH2kr     LDA #04 SFT ( r )
-		#0002 Msk+ LDA #04 SFT ( g )
-		#0004 Ms+  LDA #04 SFT ( b )
+		STH2kr     LDA ( r )
+		#0002 Msk+ LDA ( g )
+		#0004 Ms+  LDA ( b )
 		.on-pixel-received LDZ2 JSR2
 		JMP2r
 	}
 	#00 SWP
-	DUP2 #00 STH2kr     LDA MUL2 POP #04 SFT ( 00 aa a*r )
+	DUP2 #00 STH2kr     LDA MUL2 POP ( 00 aa a*r )
 	ROT ROT
-	DUP2 #00 #0002 Msk+ LDA MUL2 POP #04 SFT ( 00 aa a*g )
+	DUP2 #00 #0002 Msk+ LDA MUL2 POP ( 00 aa a*g )
 	ROT ROT
-	     #00 #0004 Ms+  LDA MUL2 POP #04 SFT ( ar ag a*b )
+	     #00 #0004 Ms+  LDA MUL2 POP ( ar ag a*b )
 	.on-pixel-received LDZ2 JSR2
 JMP2r
 
@@ -312,14 +324,18 @@ JMP2r
 	;color2/b LDA DUP ;pick-color/color2b STA #40 SFT
 	;color3/b LDA DUP ;pick-color/color3b STA ORA [ ,&blow STR ]
 
-	LIT "R Mcout [ ,&r LDR2 ] Mprint-short
-	LIT "G Mcout [ ,&g LDR2 ] Mprint-short
-	LIT "B Mcout [ ,&b LDR2 ] Mprint-short
-	Mendl
-
 	[ ,&r LDR2 ] .System/r DEO2
 	[ ,&g LDR2 ] .System/g DEO2
 	[ ,&b LDR2 ] .System/b DEO2
+JMP2r
+
+
+@pixel-to-4bit ( r8 g8 b8 -- r g b )
+	ROT DUP #f0 LTH ?{ POP #0f !&g } #08 ADD #04 SFT
+	&g
+	ROT DUP #f0 LTH ?{ POP #0f !&b } #08 ADD #04 SFT
+	&b
+	ROT DUP #f0 LTH ?{ POP #0f JMP2r } #08 ADD #04 SFT
 JMP2r
 
 
@@ -425,7 +441,7 @@ JMP2r
 	#00 SWP Mpart-size MUL2 
 	STH2
 	( load 32-bit count )
-	;part/count Msk+ LDA2k SWP2 INC2 INC2 LDA2 
+	;part/count Msk+ Mload32
 	non-zero32 ?{ POP2r #0000 JMP2r }
 
 	( order of preference:
@@ -435,69 +451,75 @@ JMP2r
 	( find index of first non-zero element )
 	#00
 	&find-g-min
-		#00 OVR #20 SFT ;part/g-sort ADD2 Msk+
-		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-g-min
+		#00 OVR #20 SFT ;part/g-sort ADD2 Msk+ Mload32 
+		non-zero32 ?&found-g-min
 		INC
 	!&find-g-min
 	&found-g-min
-	( find index of last non-zero element + 1 )
+	LIT "m Mcout LIT "G Mdebug-byte
+	( find index of last non-zero element )
 	#0f
 	&find-g-max
-		#00 OVR #20 SFT ;part/g-sort ADD2 Msk+
-		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-g-max
+		#00 OVR #20 SFT ;part/g-sort ADD2 Msk+ Mload32 
+		non-zero32 ?&found-g-max
 		#01 SUB
 	!&find-g-max
 	&found-g-max
+	LIT "M Mcout LIT "G Mdebug-byte
 	SWP SUB
-	LIT "V Mcout LIT "G Mcout DUP print-byte
+	LIT "V Mcout LIT "G Mdebug-byte Mendl
 
 	( find index of first non-zero element )
 	#00
 	&find-r-min
-		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+
-		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-r-min
+		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
+		non-zero32 ?&found-r-min
 		INC
 	!&find-r-min
 	&found-r-min
-	( find index of last non-zero element + 1 )
+	LIT "m Mcout LIT "R Mdebug-byte
+	( find index of last non-zero element )
 	#0f
 	&find-r-max
-		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+
-		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-r-max
+		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
+		non-zero32 ?&found-r-max
 		#01 SUB
 	!&find-r-max
 	&found-r-max
+	LIT "M Mcout LIT "R Mdebug-byte
 	SWP SUB
-	LIT "V Mcout LIT "R Mcout DUP print-byte
+	LIT "V Mcout LIT "R Mdebug-byte Mendl
 
 	( find index of first non-zero element )
 	#00
 	&find-b-min
-		#00 OVR #20 SFT ;part/b-sort ADD2 Msk+
-		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-b-min
+		#00 OVR #20 SFT ;part/b-sort ADD2 Msk+ Mload32 
+		non-zero32 ?&found-b-min
 		INC
 	!&find-b-min
 	&found-b-min
-	( find index of last non-zero element + 1 )
+	LIT "m Mcout LIT "B Mdebug-byte
+	( find index of last non-zero element )
 	#0f
 	&find-b-max
-		#00 OVR #20 SFT ;part/b-sort ADD2 Msk+
-		LDA2k SWP2 INC2 INC2 LDA2 non-zero32 ?&found-b-max
+		#00 OVR #20 SFT ;part/b-sort ADD2 Msk+ Mload32 
+		non-zero32 ?&found-b-max
 		#01 SUB
 	!&find-b-max
 	&found-b-max
+	LIT "M Mcout LIT "B Mdebug-byte
 	SWP SUB
-	LIT "V Mcout LIT "B Mcout DUP print-byte
+	LIT "V Mcout LIT "B Mdebug-byte Mendl
 	Mendl
 
 
 	POP2r
 
-	#03 STH
+	Mb STH
 	( wst: gvar rvar max-var | rst: max-var-chan )
-	LTHk ?{ POPr #01 STH SWP } NIP 
+	LTHk ?{ POPr Mr STH SWP } NIP 
 	( wst: gvar max-var | rst: max-var-chan )
-	LTHk ?{ POPr #02 STH SWP } NIP 
+	LTHk ?{ POPr Mg STH SWP } NIP 
 	
 	&done
 	STHr SWP
@@ -636,7 +658,8 @@ JMP2r
 BRK
 
 
-@palette-split ( r g b -- )
+@palette-split ( r8 g8 b8 -- )
+	pixel-to-4bit
 	get-partition
 	( LIT "R Mdebug-byte Mendl )
 	DUP ?{
@@ -692,12 +715,11 @@ JMP2r
 	}
 	NIP NIP
 	&found-max-var
-	.part-split-step LDZ LIT "F Mcout print-byte
 	POP
 
 	( split partition )
 
-	DUP #01 NEQ ?{
+	DUP Mr NEQ ?{
 		POP
 		#00 .part-split-step LDZ INC Mpart-size MUL2 
 		STH2
@@ -716,7 +738,7 @@ JMP2r
 		;part/b-end Msk+ LDA SWP2r ;part/b-end Msk+ STA SWP2r
 		!&split-done
 	}
-	DUP #02 NEQ ?{
+	DUP Mg NEQ ?{
 		POP
 		#00 .part-split-step LDZ INC Mpart-size MUL2 STH2
 		#00 OVR Mpart-size MUL2 STH2
@@ -838,45 +860,172 @@ BRK
 
 
 @display-init ( -> )
+	.color0/r LDZ DUP #30 SFT SWP #01 SFT ORA .color0-7/r STZ
+	.color0/g LDZ DUP #30 SFT SWP #01 SFT ORA .color0-7/g STZ
+	.color0/b LDZ DUP #30 SFT SWP #01 SFT ORA .color0-7/b STZ
+
+	.color1/r LDZ DUP #30 SFT SWP #01 SFT ORA .color1-7/r STZ
+	.color1/g LDZ DUP #30 SFT SWP #01 SFT ORA .color1-7/g STZ
+	.color1/b LDZ DUP #30 SFT SWP #01 SFT ORA .color1-7/b STZ
+
+	.color2/r LDZ DUP #30 SFT SWP #01 SFT ORA .color2-7/r STZ
+	.color2/g LDZ DUP #30 SFT SWP #01 SFT ORA .color2-7/g STZ
+	.color2/b LDZ DUP #30 SFT SWP #01 SFT ORA .color2-7/b STZ
+	
+	.color3/r LDZ DUP #30 SFT SWP #01 SFT ORA .color3-7/r STZ
+	.color3/g LDZ DUP #30 SFT SWP #01 SFT ORA .color3-7/g STZ
+	.color3/b LDZ DUP #30 SFT SWP #01 SFT ORA .color3-7/b STZ
+
 	;display .on-pixel-received STZ2
 	;done .on-file-end STZ2
 	;read-file .Screen/vector DEO2
+
+	.part-split-step LDZ #03 EQU ?{
+		;pick-color ;display/get-color-func STA2
+		( ;pick-color-grayscale ;display/get-color-func STA2 )
+		BRK
+	}
+	;get-partition ;display/get-color-func STA2
 BRK
 
 
-@display ( r g b -- )
-	pick-color .Screen/pixel DEO
-	advance-screen-pos
+( sierra lite dithering )
+( quantization error is pushed to the next pixel in line, and
+  to two pixels on the next line )
+(      X  1/2
+  1/4 1/4     )
+( we use only one line buffer, and overwrite values behind current x )
+@display ( r8 g8 b8 -- )
+	( LIT "C Mdebug-rgb )
+	;dither-buffer/b .Screen/x DEI2 ADD2 LDA
+	add8+8s-clamp STH
+
+	( r8 g8 | b-cor )
+	;dither-buffer/g .Screen/x DEI2 ADD2 LDA 
+	add8+8s-clamp STH
+
+	( r8 | b-cor g-cor )
+	;dither-buffer/r .Screen/x DEI2 ADD2 LDA
+	( LIT "+ Mcout DUP print-sbyte )
+	add8+8s-clamp STH
+
+	ROTkr 
+	( | b-cor8 g-cor8 r-cor8 g-cor8 r-cor8 b-cor8 )
+	STHr #04 SFT
+	STHr #04 SFT SWP
+	STHr #04 SFT SWP
+	( r-cor g-cor b-cor | b-cor8 g-cor8 r-cor8 )
+	[ LIT2 &get-color-func =pick-color ] JSR2
+	( LIT "P Mdebug-byte )
+
+	( r-cor g-cor b-cor col | b-cor8 g-cor8 r-cor8 )
+	STHr #01 SFT ( r-cor-half )
+	OVR #03 MUL .color0-7/r ADD LDZ ( r-printed-half )
+	SUB ( r-deltas )
+	;dither-buffer/r .Screen/x DEI2 ADD2 STH2k
+	( r-deltas addr* | addr* )
+	INC2       LDA OVR ADD STH2kr INC2      STA  ( next x, add )
+	               half8s  STH2kr           STAk ( cur x, write )
+	#0001 SUB2 LDA ADD     STH2r #0001 SUB2 STA  ( prev x, add )
+
+	STHr #01 SFT ( g-cor-half )
+	OVR #03 MUL .color0-7/g ADD LDZ ( g-printed-half )
+	SUB ( g-deltas )
+	;dither-buffer/g .Screen/x DEI2 ADD2 STH2k
+	( g-deltas addr* )
+	INC2       LDA OVR ADD STH2kr INC2      STA  ( next x, add )
+	               half8s  STH2kr           STAk ( cur x, write )
+	#0001 SUB2 LDA ADD     STH2r #0001 SUB2 STA  ( prev x, add )
+
+	STHr #01 SFT ( b-cor-half )
+	OVR #03 MUL .color0-7/b ADD LDZ ( b-printed-half )
+	SUB ( b-deltas )
+	;dither-buffer/b .Screen/x DEI2 ADD2 STH2k
+	( b-deltas addr* )
+	INC2       LDA OVR ADD STH2kr INC2      STA  ( next x, add )
+	               half8s  STH2kr           STAk ( cur x, write )
+	#0001 SUB2 LDA ADD     STH2r #0001 SUB2 STA  ( prev x, add )
+	.Screen/pixel DEO
+	POP2 POP
+
+	advance-screen-pos ?{ 
+		JMP2r
+	}
+	( .Screen/y DEI2 #00a8 NEQ2 ?{  )
+	( 	;end .on-pixel-received STZ2 )
+	( 	( #80 .System/state DEO ) )
+	( 	BRK  )
+	( } )
 JMP2r
 
 
+( @swap-buffers ( -- ) )
+( 	.line-buf-r/cur LDZ2  )
+( 	;line-buffer-r/1 NEQ2 ?{ )
+( 		;line-buffer-r/2 .line-buf-r/cur STZ2 )
+( 		;line-buffer-r/1 .line-buf-r/next STZ2 )
+( 		!&g )
+( 	} )
+( 	;line-buffer-r/1 .line-buf-r/cur STZ2 )
+( 	;line-buffer-r/2 .line-buf-r/next STZ2 )
+( 	&g )
+( 	;line-buffer-r/1 NEQ2 ?{ )
+( 		;line-buffer-r/2 .line-buf-r/cur STZ2 )
+( 		;line-buffer-r/1 .line-buf-r/next STZ2 )
+( 		!&g )
+( 	} )
+( 	;line-buffer-r/1 .line-buf-r/cur STZ2 )
+( 	;line-buffer-r/2 .line-buf-r/next STZ2 )
+( JMP2r )
+
+
+( TODO: precompute sRGB -> grayscale lookup table? )
+( also this needs to return r g b c )
+( @pick-color-grayscale ( r g b -- c ) )
+( 	ADD ADD ADD )
+( 	DUP #0b GTH ?{  )
+( 		POP #00  )
+( 		JMP2r )
+( 	}	 )
+( 	DUP #16 GTH ?{  )
+( 		POP #01 )
+( 		JMP2r )
+( 	}	 )
+( 	#21 GTH ?{  )
+( 		#02 )
+( 		JMP2r )
+( 	}	 )
+( 	#03	 )
+( JMP2r )
+
+
 ( chooses closest color from palette )
-@pick-color ( r g b -- c )
+@pick-color ( r g b -- r g b c )
 	ROTk ( r g b g b r )
 	[ LIT &color0r $1 ] GTHk ?{ SWP } SUB
 	SWP [ LIT &color0b $1 ] GTHk ?{ SWP } SUB ADD
 	SWP [ LIT &color0g $1 ] GTHk ?{ SWP } SUB ADD
-	DUP ?{ ( diff is 0 ) POP2 POP2 #00 JMP2r }
+	DUP ?{ ( diff is 0 ) POP #00 JMP2r }
 	[ ,&diff0 STR ]
 
 	ROTk ( r g b g b r )
 	[ LIT &color1r $1 ] GTHk ?{ SWP } SUB
 	SWP [ LIT &color1b $1 ] GTHk ?{ SWP } SUB ADD
 	SWP [ LIT &color1g $1 ] GTHk ?{ SWP } SUB ADD
-	DUP ?{ ( diff is 0 ) POP2 POP2 #01 JMP2r }
+	DUP ?{ ( diff is 0 ) POP #01 JMP2r }
 	[ ,&diff1 STR ]
 
 	ROTk ( r g b g b r )
 	[ LIT &color2r $1 ] GTHk ?{ SWP } SUB
 	SWP [ LIT &color2b $1 ] GTHk ?{ SWP } SUB ADD
 	SWP [ LIT &color2g $1 ] GTHk ?{ SWP } SUB ADD
-	DUP ?{ ( diff is 0 ) POP2 POP2 #02 JMP2r }
+	DUP ?{ ( diff is 0 ) POP #02 JMP2r }
 	[ ,&diff2 STR ]
 
-	( r g b )
-	[ LIT &color3b $1 ] GTHk ?{ SWP } SUB
+	ROTk ( r g b g b r )
+	[ LIT &color3r $1 ] GTHk ?{ SWP } SUB
+	SWP [ LIT &color3b $1 ] GTHk ?{ SWP } SUB ADD
 	SWP [ LIT &color3g $1 ] GTHk ?{ SWP } SUB ADD
-	SWP [ LIT &color3r $1 ] GTHk ?{ SWP } SUB ADD
 	DUP ?{ ( diff is 0 ) POP #03 JMP2r }
 
 	#03 SWP
@@ -888,11 +1037,13 @@ JMP2r
 
 
 ( assumes screen auto )
-@advance-screen-pos ( -- )
+@advance-screen-pos ( -- new-line )
 	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
 		#0000 .Screen/x DEO2 
-		.Screen/y DEI2 INC2 .Screen/y DEO2 
+		.Screen/y DEI2 INC2 .Screen/y DEO2
+		#01 JMP2r
 	}
+	#00
 JMP2r
 
 
@@ -931,6 +1082,71 @@ BRK
 	#01 .System/state DEO
 BRK
 
+
+
+
+( utils and stdlib )
+
+
+@print-str ( str* -- )
+	&while ( -- )
+		LDAk .Console/write DEO
+		INC2 LDAk 
+	?&while
+	POP2 
+JMP2r
+
+
+@print-byte ( b -- )
+	DUP #04 SFT DUP #09 GTH #27 MUL 
+	ADD [ LIT "0 ] ADD .Console/write DEO
+
+	#0f AND DUP #09 GTH #27 MUL 
+	ADD [ LIT "0 ] ADD .Console/write DEO
+JMP2r
+
+
+@inc32-addr ( addr* -- )
+	DUP2 INC2 INC2 LDA2 INC2 ( inc lower short )
+	DUP2 #0000 NEQ2 ?{
+		POP2 LDA2k INC2 OVR2 STA2 ( inc upper short )
+		#0000 SWP2 INC2 INC2 STA2 
+		JMP2r 
+	}
+	SWP2 INC2 INC2 STA2	
+JMP2r
+
+
+@add8+8s-clamp ( b bs -- b )
+	DUP #80 AND ?{
+		( pos + pos )
+		OVR ADD 
+		GTHk ?{ NIP JMP2r }
+		( overflow )
+		POP2 #ff 
+		JMP2r
+	}
+	( pos + neg )
+	OVR ADD
+	LTHk ?{ NIP JMP2r }
+	( underflow )
+	POP2 #00
+JMP2r
+
+
+@half8s ( sb -- sb )
+	DUP #80 AND ?{ #01 SFT JMP2r }
+	#ff SWP SUB #01 SFT #ff SWP SUB
+JMP2r
+
+@print-sbyte ( sb -- )
+	DUP #80 AND ?{ print-byte JMP2r }
+	LIT "- Mcout #ff SWP SUB INC print-byte
+JMP2r
+
+
+
+
 @str [
 	&init "Hello! 0a 00
 	&read "Reading 20 00
@@ -950,39 +1166,6 @@ BRK
 
 
 
-
-( utils and stdlib )
-
-
-@print-str ( str* -- )
-	&while ( -- )
-		LDAk .Console/write DEO
-		INC2 LDAk 
-	?&while
-	POP2 
-JMP2r
-
-@print-byte ( b -- )
-	DUP #04 SFT DUP #09 GTH #27 MUL 
-	ADD [ LIT "0 ] ADD .Console/write DEO
-
-	#0f AND DUP #09 GTH #27 MUL 
-	ADD [ LIT "0 ] ADD .Console/write DEO
-JMP2r
-
-@inc32-addr ( addr* -- )
-	DUP2 INC2 INC2 LDA2 INC2 ( inc lower short )
-	DUP2 #0000 NEQ2 ?{
-		POP2 LDA2k INC2 OVR2 STA2 ( inc upper short )
-		#0000 SWP2 INC2 INC2 STA2 
-		JMP2r 
-	}
-	SWP2 INC2 INC2 STA2	
-JMP2r
-
-
-
-
 ( http://plastic-idolatry.com/erik/nxu/math32.tal )
 
 
@@ -995,6 +1178,10 @@ JMP2r
 ( x != 0 )
 @non-zero32 ( x** -> bool^ )
     ORA2 ORA JMP2r
+
+( x == 0 )
+@is-zero32 ( x** -> bool^ )
+    ORA2 #0000 EQU2 JMP2r
 
 ( x + y )
 @add32 ( xhi* xlo* yhi* ylo* -> zhi* zlo* )
@@ -1100,6 +1287,10 @@ JMP2r
 @lt32 ( x** y** -> bool^ )
     ROT2 SWP2 LTH2 ?{ LTH2 JMP2r } GTH2 #00 EQU JMP2r
 
+( x <= y )
+@lteq32 ( x** y** -> bool^ )
+    ROT2 SWP2 GTH2 ?{ GTH2 #00 EQU JMP2r } LTH2 JMP2r
+
 ( x > y )
 @gteq32 ( x** y** -> bool^ )
     ROT2 SWP2 LTH2 ?{ LTH2 #00 EQU JMP2r } GTH2 JMP2r
@@ -1202,12 +1393,13 @@ JMP2r
 @file-buf [ $3fe0 &pre-end $20 &end ]
 
 
-( 3 line buffers, for dithering )
-( 0x1800 = 6144 bytes; 6144 / 3 * 2 = 4096 pixels per line max )
-( 0x1800 * 3 = 0x4800 )
-@line-buffer [
-	$2 &1 $1800 $2
-	$2 &2 $1800 $2
-	$2 &3 $1800 $2
+( signed 8-bit values of quantization errors. divided by 2 )
+( 0x3000 = 4096*3 bytes; 4096 pixels per line max )
+( a couple bytes of padding, so that dithering algorithm does not need
+  to check bounds )
+@dither-buffer [ 
+	$1 &r $1000 $1
+	$1 &g $1000 $1
+	$1 &b $1000 $1
 ]
 @end
