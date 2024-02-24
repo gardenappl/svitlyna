@@ -10,6 +10,9 @@
 	&vector $2 &width $2 &height $2 &auto $1 &pad 
 	$1 &x $2 &y $2 &addr $2 &pixel $1 &sprite $1600
 ]
+|80 @Controller [
+	&vector $2 &button $1 &key $1
+]
 |a0 @File [ 
 	&vector $2 &success $2 &stat $2 &delete $1 
 	&append $1 &name $2 &length $2 &read $2 &write $2
@@ -28,13 +31,8 @@
 %Mmax-height { #1000 }
 %Mmax-name-length { #07ff }
 
-( 4-bit color, used for most processing ops )
-@color0 [ &r $1 &g $1 &b $1 ]
-@color1 [ &r $1 &g $1 &b $1 ]
-@color2 [ &r $1 &g $1 &b $1 ]
-@color3 [ &r $1 &g $1 &b $1 ]
-
-( 7-bit color, used for dithering )
+( 7-bit colors, used for dithering, 
+  one bit reserved for signed quantization errors )
 @color0-7 [ &r $1 &g $1 &b $1 ]
 @color1-7 [ &r $1 &g $1 &b $1 ]
 @color2-7 [ &r $1 &g $1 &b $1 ]
@@ -48,6 +46,11 @@
 @on-file-end $2
 
 @part-split-step $1
+@current-palette $2
+@current-mode $1
+%Mmode-streaming { #01 }
+%Mmode-no-dithering { #02 }
+%Mmode-partition-color-func { #04 }
 
 %Mcout { .Console/write DEO }
 %Mendl { #0a Mcout }
@@ -86,26 +89,23 @@
 	#1234 ;end STA2
 	;end LDA2 #1234 EQU2 ?{ ;str/memory-error !fail }
 
-	( [ #0000 #00 ] .color0/b STZ .color0/g STZ .color0/r STZ )
-	( [ #0505 #05 ] .color1/b STZ .color1/g STZ .color1/r STZ )
-	( [ #0909 #09 ] .color2/b STZ .color2/g STZ .color2/r STZ )
-	( [ #0f0f #0f ] .color3/b STZ .color3/g STZ .color3/r STZ )
-	( [ #0000 #04 ] .color0/b STZ .color0/g STZ .color0/r STZ )
-	( [ #0c00 #00 ] .color1/b STZ .color1/g STZ .color1/r STZ )
-	( [ #0008 #00 ] .color2/b STZ .color2/g STZ .color2/r STZ )
-	( [ #0f0f #0f ] .color3/b STZ .color3/g STZ .color3/r STZ )
-	( prepare-palette )
 	;str/init print-str
 
-	#01 .Screen/auto DEO
+	;palettes/bw .current-palette STZ2
+	prepare-palette
+
+	;on-controller-input .Controller/vector DEO2
 
 	.Console/type DEI ?{ 
 		;on-stdin .Console/vector DEO2	
+		Mmode-streaming .current-mode STZ
 		;str/read print-str ;str/read-stdin print-str
 
 		;detect-magic .on-bytes-received STZ2
 		#0008 .bytes-expected STZ2
 		;display .on-pixel-received STZ2
+
+		!display-init
 		BRK 
 	}
 
@@ -114,12 +114,10 @@ BRK
 
 
 @on-stdin ( -> )
-	( LIT ". Mcout )
 	[ LIT2 &index 0000 ] 
 	DUP2 ;file-buf ADD2 
 	.Console/read DEI ROT ROT STA
 	INC2 DUP2 .bytes-expected LDZ2 NEQ2 ?{
-		( LIT "! Mcout )
 		( call subroutine )
 		;file-buf .on-bytes-received LDZ2 JSR2
 		POP2 #0000 [ ,&index STR2 ]
@@ -139,8 +137,8 @@ BRK
 		Mendl
 		
 		#00 .part-split-step STZ
-		!palette-split-init
-		( !display-init )
+		( !palette-split-init )
+		!display-init
 	}
 	.Console/read DEI 
 	[ ,&name-length LDR2 ] ;filename ADD2 STA
@@ -160,8 +158,6 @@ BRK
 
 	#0008 .bytes-expected STZ2
 	;detect-magic .on-bytes-received STZ2
-	( #0005 .bytes-expected STZ2 )
-	( ;echo-file .on-bytes-received STZ2 )
 
 	;filename .File/name DEO2
 	Mfile-buffer-length .File/length DEO2
@@ -214,6 +210,90 @@ BRK
 		#0000 .Screen/vector DEO2
 		.on-file-end LDZ2 JMP2
 BRK
+
+
+
+
+( ui )
+
+@on-controller-input ( -> )
+	.Controller/button DEI 		
+	DUP #01 AND ?on-a-ctrl
+	DUP #02 AND ?on-b-alt
+	DUP #10 AND ?on-dpad-up
+	    #20 AND ?on-dpad-down
+BRK
+
+
+@on-a-ctrl ( -> )
+	Mmode-streaming is-mode ?end
+	;palettes/detected-from-img .current-palette STZ2
+
+	.part-split-step LDZ #03 EQU ?{
+		!palette-split-init
+	}
+
+	prepare-palette-avg
+	!display-init
+BRK
+
+
+@on-b-alt ( -> )
+	Mmode-streaming is-mode ?end
+	.current-palette LDZ2 ;palettes/detected-from-img NEQ2 ?{ 
+		Mmode-partition-color-func is-mode ?{
+			Mmode-partition-color-func #01 set-mode
+			!display-init
+			BRK
+		}
+		Mmode-partition-color-func #00 set-mode
+		( also toggle dithering, allowing 4 modes )
+	}
+	Mmode-no-dithering is-mode ?{
+		Mmode-no-dithering #01 set-mode
+		!display-init
+	}
+
+	Mmode-no-dithering #00 set-mode
+	!display-init
+BRK
+
+
+@on-dpad-up ( -> )
+	Mmode-streaming is-mode ?end
+	.current-palette LDZ2 
+	#0006 ADD2
+	DUP2 ;palettes/detected-from-img LTH2 ?{
+		POP2 ;palettes
+	}
+	.current-palette STZ2
+	prepare-palette
+	!display-init
+BRK
+
+
+@on-dpad-down ( -> )
+	Mmode-streaming is-mode ?end
+	.current-palette LDZ2
+	DUP2 ;palettes GTH2 ?{
+		POP2 ;palettes/detected-from-img
+	}
+	#0006 SUB2
+	.current-palette STZ2
+	prepare-palette
+	!display-init
+BRK
+
+
+@is-mode ( mode -- bool )
+	.current-mode LDZ AND
+JMP2r
+
+
+@set-mode ( mode value -- bool )
+	?{ .current-mode LDZ EOR .current-mode STZ JMP2r }
+	.current-mode LDZ ORA .current-mode STZ
+JMP2r
 
 
 
@@ -297,36 +377,10 @@ JMP2r
 
 
 @prepare-palette ( -- )
-	LIT "0 Mcout
-	;color0/b LDA ;color0/g LDA ;color0/r LDA Mprint-bgr
-	LIT "1 Mcout
-	;color1/b LDA ;color1/g LDA ;color1/r LDA Mprint-bgr
-	LIT "2 Mcout
-	;color2/b LDA ;color2/g LDA ;color2/r LDA Mprint-bgr
-	LIT "3 Mcout
-	;color3/b LDA ;color3/g LDA ;color3/r LDA Mprint-bgr
-
-	;color0/r LDA DUP ;pick-color/color0r STA #40 SFT 
-	;color1/r LDA DUP ;pick-color/color1r STA ORA [ ,&rhigh STR ]
-	;color2/r LDA DUP ;pick-color/color2r STA #40 SFT
-	;color3/r LDA DUP ;pick-color/color3r STA ORA [ ,&rlow STR ]
-	;color0/g LDA DUP ;pick-color/color0g STA #40 SFT 
-	;color1/g LDA DUP ;pick-color/color1g STA ORA [ ,&ghigh STR ]
-	;color2/g LDA DUP ;pick-color/color2g STA #40 SFT
-	;color3/g LDA DUP ;pick-color/color3g STA ORA [ ,&glow STR ]
-	!{
-		&r &rhigh 00 &rlow 00
-		&g &ghigh 00 &glow 00
-		&b &bhigh 00 &blow 00
-	}
-	;color0/b LDA DUP ;pick-color/color0b STA #40 SFT 
-	;color1/b LDA DUP ;pick-color/color1b STA ORA [ ,&bhigh STR ]
-	;color2/b LDA DUP ;pick-color/color2b STA #40 SFT
-	;color3/b LDA DUP ;pick-color/color3b STA ORA [ ,&blow STR ]
-
-	[ ,&r LDR2 ] .System/r DEO2
-	[ ,&g LDR2 ] .System/g DEO2
-	[ ,&b LDR2 ] .System/b DEO2
+	.current-palette LDZ2 
+	          LDA2k .System/r DEO2
+	INC2 INC2 LDA2k .System/g DEO2 
+	INC2 INC2 LDA2  .System/b DEO2 
 JMP2r
 
 
@@ -346,7 +400,7 @@ JMP2r
 
 ( partitioning color space, via median cut algorithm )
 
-( see bottom of file for file structure )
+( see bottom of file for partition structure )
 %Mpart-size { #00ca } 
 
 
@@ -773,8 +827,6 @@ JMP2r
 	&split-done
 	POP2r POP2r
 
-	( optimize routines )
-
 	.part-split-step LDZ #01 LTH ?{
 		.part-split-step LDZ #02 LTH ?{
 			#03 .part-split-step STZ
@@ -834,25 +886,50 @@ JMP2r
 	#02 part-debug
 	#03 part-debug
 
-	;part/r-sort ;part/count avg-color .color0/r STZ
-	;part/g-sort ;part/count avg-color .color0/g STZ
-	;part/b-sort ;part/count avg-color .color0/b STZ
+	;part/r-sort ;part/count avg-color ;&color0r STA
+	;part/g-sort ;part/count avg-color ;&color0g STA
+	;part/b-sort ;part/count avg-color ;&color0b STA
 
-	;part1/r-sort ;part1/count avg-color .color1/r STZ
-	;part1/g-sort ;part1/count avg-color .color1/g STZ
-	;part1/b-sort ;part1/count avg-color .color1/b STZ
+	;part1/r-sort ;part1/count avg-color ;&color1r STA
+	;part1/g-sort ;part1/count avg-color ;&color1g STA
+	;part1/b-sort ;part1/count avg-color ;&color1b STA
 
-	;part2/r-sort ;part2/count avg-color .color2/r STZ
-	;part2/g-sort ;part2/count avg-color .color2/g STZ
-	;part2/b-sort ;part2/count avg-color .color2/b STZ
+	;part2/r-sort ;part2/count avg-color ;&color2r STA
+	;part2/g-sort ;part2/count avg-color ;&color2g STA
+	;part2/b-sort ;part2/count avg-color ;&color2b STA
 
-	;part3/r-sort ;part3/count avg-color .color3/r STZ
-	;part3/g-sort ;part3/count avg-color .color3/g STZ
-	;part3/b-sort ;part3/count avg-color .color3/b STZ
+	;part3/r-sort ;part3/count avg-color ;&color3r STA
+	;part3/g-sort ;part3/count avg-color ;&color3g STA
+	;part3/b-sort ;part3/count avg-color ;&color3b STA
 
-	prepare-palette
+	prepare-palette-avg
 	!display-init
 BRK
+	&color0r $1 &color0g $1 &color0b $1
+	&color1r $1 &color1g $1 &color1b $1
+	&color2r $1 &color2g $1 &color2b $1
+	&color3r $1 &color3g $1 &color3b $1
+
+
+@prepare-palette-avg ( -- )
+	;avg-colors/color0r LDA #40 SFT
+	;avg-colors/color1r LDA ORA
+	;avg-colors/color2r LDA #40 SFT
+	;avg-colors/color3r LDA ORA
+	.System/r DEO2
+
+	;avg-colors/color0g LDA #40 SFT
+	;avg-colors/color1g LDA ORA
+	;avg-colors/color2g LDA #40 SFT
+	;avg-colors/color3g LDA ORA
+	.System/g DEO2
+
+	;avg-colors/color0b LDA #40 SFT
+	;avg-colors/color1b LDA ORA
+	;avg-colors/color2b LDA #40 SFT
+	;avg-colors/color3b LDA ORA
+	.System/b DEO2
+JMP2r
 
 
 
@@ -860,33 +937,85 @@ BRK
 
 
 @display-init ( -> )
-	.color0/r LDZ DUP #30 SFT SWP #01 SFT ORA .color0-7/r STZ
-	.color0/g LDZ DUP #30 SFT SWP #01 SFT ORA .color0-7/g STZ
-	.color0/b LDZ DUP #30 SFT SWP #01 SFT ORA .color0-7/b STZ
+	.System/r DEI2
+	LIT "R Mdebug-short Mendl
+	DUP #0f AND     DUP ;pick-color/color3r STA
+	                DUP #30 SFT SWP #01 SFT ORA .color3-7/r STZ
+	#f0 AND #04 SFT DUP ;pick-color/color2r STA
+	                DUP #30 SFT SWP #01 SFT ORA .color2-7/r STZ
+	DUP #0f AND     DUP ;pick-color/color1r STA
+	                DUP #30 SFT SWP #01 SFT ORA .color1-7/r STZ
+	#f0 AND #04 SFT DUP ;pick-color/color0r STA
+	                DUP #30 SFT SWP #01 SFT ORA .color0-7/r STZ
+	.System/g DEI2
+	LIT "G Mdebug-short Mendl
+	DUP #0f AND     DUP ;pick-color/color3g STA
+	                DUP #30 SFT SWP #01 SFT ORA .color3-7/g STZ
+	#f0 AND #04 SFT DUP ;pick-color/color2g STA
+	                DUP #30 SFT SWP #01 SFT ORA .color2-7/g STZ
+	DUP #0f AND     DUP ;pick-color/color1g STA
+	                DUP #30 SFT SWP #01 SFT ORA .color1-7/g STZ
+	#f0 AND #04 SFT DUP ;pick-color/color0g STA
+	                DUP #30 SFT SWP #01 SFT ORA .color0-7/g STZ
+	.System/b DEI2
+	LIT "B Mdebug-short Mendl
+	DUP #0f AND     DUP ;pick-color/color3b STA
+	                DUP #30 SFT SWP #01 SFT ORA .color3-7/b STZ
+	#f0 AND #04 SFT DUP ;pick-color/color2b STA
+	                DUP #30 SFT SWP #01 SFT ORA .color2-7/b STZ
+	DUP #0f AND     DUP ;pick-color/color1b STA
+	                DUP #30 SFT SWP #01 SFT ORA .color1-7/b STZ
+	#f0 AND #04 SFT DUP ;pick-color/color0b STA
+	                DUP #30 SFT SWP #01 SFT ORA .color0-7/b STZ
 
-	.color1/r LDZ DUP #30 SFT SWP #01 SFT ORA .color1-7/r STZ
-	.color1/g LDZ DUP #30 SFT SWP #01 SFT ORA .color1-7/g STZ
-	.color1/b LDZ DUP #30 SFT SWP #01 SFT ORA .color1-7/b STZ
-
-	.color2/r LDZ DUP #30 SFT SWP #01 SFT ORA .color2-7/r STZ
-	.color2/g LDZ DUP #30 SFT SWP #01 SFT ORA .color2-7/g STZ
-	.color2/b LDZ DUP #30 SFT SWP #01 SFT ORA .color2-7/b STZ
-	
-	.color3/r LDZ DUP #30 SFT SWP #01 SFT ORA .color3-7/r STZ
-	.color3/g LDZ DUP #30 SFT SWP #01 SFT ORA .color3-7/g STZ
-	.color3/b LDZ DUP #30 SFT SWP #01 SFT ORA .color3-7/b STZ
-
+	Mmode-no-dithering is-mode ?{
+		;display-dither .on-pixel-received STZ2
+		!&display-func-set
+	}
 	;display .on-pixel-received STZ2
-	;done .on-file-end STZ2
-	;read-file .Screen/vector DEO2
+	&display-func-set
 
-	.part-split-step LDZ #03 EQU ?{
+	;done .on-file-end STZ2
+	.current-mode LDZ Mmode-streaming AND ?{
+		;read-file .Screen/vector DEO2
+	}
+
+	#01 .Screen/auto DEO
+	#0000 .Screen/x DEO2
+	#0000 .Screen/y DEO2
+
+	#0000
+	&clear-buf
+		#0000 OVR2 ;dither-buffer/r ADD2 STA2
+		#0000 OVR2 ;dither-buffer/g ADD2 STA2
+		#0000 OVR2 ;dither-buffer/b ADD2 STA2
+		INC2 INC2
+		DUP2 .img-w LDZ2 LTH2
+	?&clear-buf
+	POP2
+	
+	.current-palette LDZ2 ;palettes/detected-from-img EQU2 ?{
 		;pick-color ;display/get-color-func STA2
-		( ;pick-color-grayscale ;display/get-color-func STA2 )
+		;pick-color ;display-dither/get-color-func STA2
+		BRK
+	}
+	Mmode-partition-color-func is-mode ?{
+		;pick-color ;display/get-color-func STA2
+		;pick-color ;display-dither/get-color-func STA2
 		BRK
 	}
 	;get-partition ;display/get-color-func STA2
+	;get-partition ;display-dither/get-color-func STA2
 BRK
+
+
+@display ( r8 g8 b8 )
+	pixel-to-4bit
+	[ LIT2 &get-color-func $2 ] JSR2
+	.Screen/pixel DEO
+	POP2 POP
+	advance-screen-pos POP
+JMP2r
 
 
 ( sierra lite dithering )
@@ -895,7 +1024,7 @@ BRK
 (      X  1/2
   1/4 1/4     )
 ( we use only one line buffer, and overwrite values behind current x )
-@display ( r8 g8 b8 -- )
+@display-dither ( r8 g8 b8 -- )
 	( LIT "C Mdebug-rgb )
 	;dither-buffer/b .Screen/x DEI2 ADD2 LDA
 	add8+8s-clamp STH
@@ -915,7 +1044,7 @@ BRK
 	STHr #04 SFT SWP
 	STHr #04 SFT SWP
 	( r-cor g-cor b-cor | b-cor8 g-cor8 r-cor8 )
-	[ LIT2 &get-color-func =pick-color ] JSR2
+	[ LIT2 &get-color-func $2 ] JSR2
 	( LIT "P Mdebug-byte )
 
 	( r-cor g-cor b-cor col | b-cor8 g-cor8 r-cor8 )
@@ -951,52 +1080,7 @@ BRK
 	advance-screen-pos ?{ 
 		JMP2r
 	}
-	( .Screen/y DEI2 #00a8 NEQ2 ?{  )
-	( 	;end .on-pixel-received STZ2 )
-	( 	( #80 .System/state DEO ) )
-	( 	BRK  )
-	( } )
 JMP2r
-
-
-( @swap-buffers ( -- ) )
-( 	.line-buf-r/cur LDZ2  )
-( 	;line-buffer-r/1 NEQ2 ?{ )
-( 		;line-buffer-r/2 .line-buf-r/cur STZ2 )
-( 		;line-buffer-r/1 .line-buf-r/next STZ2 )
-( 		!&g )
-( 	} )
-( 	;line-buffer-r/1 .line-buf-r/cur STZ2 )
-( 	;line-buffer-r/2 .line-buf-r/next STZ2 )
-( 	&g )
-( 	;line-buffer-r/1 NEQ2 ?{ )
-( 		;line-buffer-r/2 .line-buf-r/cur STZ2 )
-( 		;line-buffer-r/1 .line-buf-r/next STZ2 )
-( 		!&g )
-( 	} )
-( 	;line-buffer-r/1 .line-buf-r/cur STZ2 )
-( 	;line-buffer-r/2 .line-buf-r/next STZ2 )
-( JMP2r )
-
-
-( TODO: precompute sRGB -> grayscale lookup table? )
-( also this needs to return r g b c )
-( @pick-color-grayscale ( r g b -- c ) )
-( 	ADD ADD ADD )
-( 	DUP #0b GTH ?{  )
-( 		POP #00  )
-( 		JMP2r )
-( 	}	 )
-( 	DUP #16 GTH ?{  )
-( 		POP #01 )
-( 		JMP2r )
-( 	}	 )
-( 	#21 GTH ?{  )
-( 		#02 )
-( 		JMP2r )
-( 	}	 )
-( 	#03	 )
-( JMP2r )
 
 
 ( chooses closest color from palette )
@@ -1144,6 +1228,34 @@ JMP2r
 	LIT "- Mcout #ff SWP SUB INC print-byte
 JMP2r
 
+
+
+
+( in the .System/r,g,b format. r0r1r2r3, g0g1g2g3, b0b1b2b3 )
+( on monochrome screens, colors 0 and 2 are black, 1 and 3 are white )
+@palettes [
+	&bw    [ 0f5a 0f5a 0f5a ]
+	&darkr [ 8f00 0ff0 0f0f ]
+	&darkg [ 0ff0 8f00 0f0f ]
+	&darkb [ 0ff0 0f0f 8f00 ]
+
+	&krgw  [ 0f0f 00ff 000f ]
+	&krbw  [ 0f0f 000f 00ff ]
+	&kgbw  [ 000f 0f0f 00ff ]
+
+	&kcmy  [ 00ff 0f0f 0ff0 ]
+	&kcmw  [ 00ff 0f0f 0fff ]
+	&kcyw  [ 00ff 0fff 0f0f ]
+	&kmyw  [ 0fff 00ff 0f0f ]
+
+	&kcrw  [ 00ff 0f0f 0f0f ]
+	&kmgw  [ 0f0f 00ff 0f0f ]
+	&kybw  [ 0f0f 0f0f 00ff ]
+
+	&krgb  [ 0f00 00f0 000f ]
+	&rgbw  [ f00f 0f0f 00ff ]
+	&detected-from-img ( special palette )
+]
 
 
 
