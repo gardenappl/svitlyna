@@ -94,6 +94,8 @@
 	;palettes/bw .current-palette STZ2
 	prepare-palette
 
+	( Mmode-no-dithering #01 set-mode )
+
 	;on-controller-input .Controller/vector DEO2
 
 	.Console/type DEI ?{ 
@@ -189,7 +191,6 @@ BRK
 			]
 		}
 		( not enough bytes )
-		( LIT ". Mcout )
 
 		;file-buf/end NEQ2 ?{
 			( buffer full )
@@ -302,32 +303,32 @@ JMP2r
 
 
 @detect-magic ( {buffer}* -- )
-	STH2
-	#00
-	&loop
-		#00 OVR Msk+ LDA
-		DUP .Console/write DEO 
-		OVR #00 SWP ;&magic ADD2 LDA 
-		DUP ?{ !&loop-end }
-		EQU ?{ !bad-file }
-		INC
-	!&loop
-	[ &magic "farbfeld 00 ]
-	&loop-end
-
-	POP POP2r
-	Mendl 
-
+	DUP2 ;&farbfeld str-starts-with ?{
+		!&try-qoi
+	}
+	;&farbfeld print-str Mendl
+	POP2
 	;ff-size .on-bytes-received STZ2
 	#0008 .bytes-expected STZ2
+	JMP2r
+
+	[ &farbfeld "farbfeld 00 ]
+	[ &qoif "qoif 00 ]
+
+	&try-qoi
+	DUP2 ;&qoif str-starts-with ?{
+		!bad-file
+	}
+	;&qoif print-str Mendl
+	qoi-header1
 JMP2r
 
 
 @ff-size ( {buffer}* -- )
-	DUP2 LDA2 #0000 EQU2 ?{ !too-large } INC2 INC2
-	DUP2 LDA2 ( width ) SWP2 INC2 INC2
-	DUP2 LDA2 #0000 EQU2 ?{ !too-large } INC2 INC2
-	     LDA2 ( height )
+	          LDA2k #0000 NEQ2 ?too-large
+	INC2 INC2 LDA2k ( width ) SWP2 
+	INC2 INC2 LDA2k #0000 NEQ2 ?too-large
+	INC2 INC2 LDA2 ( height )
 
 	handle-image-size
 
@@ -360,6 +361,216 @@ JMP2r
 JMP2r
 
 
+@alpha-multiply ( r g b a -- r*a g*a b*a )
+	INCk ?{ POP JMP2r } ( don't multiply if opaque )
+	( r g b a )
+	STHk #00 ROT #00 STHr MUL2 POP STH 
+	( r g a | b*a )
+	STHk #00 ROT #00 STHr MUL2 POP STH 
+	( r a | b*a g*a )
+	STH  #00 SWP #00 STHr MUL2 POP
+	STH2r
+	.on-pixel-received LDZ2 JSR2
+JMP2r
+
+
+@qoi-header1 ( {buffer}* -- )
+	#0004 ADD2
+	DUP2 LDA2 #0000 NEQ2 ?too-large
+	INC2 INC2 LDA2 ;&w STA2
+
+	;qoi-header2 .on-bytes-received STZ2
+	#0006 .bytes-expected STZ2		
+JMP2r
+	&w $2
+
+
+@qoi-header2 ( {buffer}* -- )
+	;qoi-header1/w LDA2 ( width )
+	OVR2 LDA2 #0000 NEQ2 ?too-large
+	SWP2 INC2 INC2 
+	LDA2 ( height )
+	handle-image-size
+
+	( ignore channels and colorspace )
+	
+	;qoi-last
+	&loop
+		#0000 OVR2 STA2
+		INC2 INC2
+		DUP2 ;qoi-index/end LTH2
+	?&loop
+	POP2
+	#ff ;qoi-last/a STA
+
+	;qoi-chunk .on-bytes-received STZ2
+	#0001 .bytes-expected STZ2
+JMP2r
+
+
+@qoi-last  [ &r $1  &g $1  &b $1  &a $1  ]
+@qoi-index [ &r $40 &g $40 &b $40 &a $40 ] &end $2
+
+%Mqoi-stlast {
+	STH2 DUP2 ;qoi-last/r STA2 
+	STH2r DUP2 ;qoi-last/b STA2
+}
+
+
+@qoi-stindex ( r g b a -- r g b a )
+	SWP2k
+	( r g b a b a r g )
+	    #05 MUL     ( 5g )
+	SWP #03 MUL ADD ( 3r )
+	SWP #0b MUL ADD ( 11a )
+	SWP #07 MUL ADD ( 7b )
+	#3f AND #00 SWP STH2
+	SWP2k
+	;qoi-index/g Msk+ STA
+	;qoi-index/r Msk+ STA
+	;qoi-index/a Msk+ STA
+	;qoi-index/b Ms+  STA
+JMP2r
+
+
+@qoi-chunk ( {buffer}* -- )
+	LDA
+	( QOI_OP_RGB )
+	#fe NEQk ?{
+		POP2
+		;qoi-chunk-rgb .on-bytes-received STZ2
+		#0003 .bytes-expected STZ2
+		JMP2r
+	}
+	POP
+	( QOI_OP_RGBA )
+	#ff NEQk ?{
+		POP2
+		;qoi-chunk-rgba .on-bytes-received STZ2	
+		#0004 .bytes-expected STZ2
+		JMP2r
+	}
+	POP
+	( QOI_OP_INDEX )
+	DUP #06 SFT ?{
+		( 7 6 5 4 3 2 1 0 )
+		( 0 0|   index    )
+		#00 SWP #3f AND STH2
+		;qoi-index/r Msk+ LDA
+		;qoi-index/g Msk+ LDA
+		;qoi-index/b Msk+ LDA
+		;qoi-index/a Ms+ LDA
+		Mqoi-stlast
+		alpha-multiply
+		.on-pixel-received LDZ2 JSR2
+		JMP2r
+	}
+	( QOI_OP_DIFF )
+	DUP #06 SFT #01 NEQ ?{
+		( 7 6 5 4 3 2 1 0 )
+		( 0 1| dr| dg| db )
+		DUP #04 SFT #03 AND ;qoi-last/r LDA ADD #02 SUB 
+		OVR #02 SFT #03 AND ;qoi-last/g LDA ADD #02 SUB 
+		ROT         #03 AND ;qoi-last/b LDA ADD #02 SUB 
+			            ;qoi-last/a LDA
+		Mqoi-stlast
+		qoi-stindex
+		alpha-multiply
+		.on-pixel-received LDZ2 JSR2
+		JMP2r
+	}
+	( QOI_OP_LUMA )
+	DUP #06 SFT #02 NEQ ?{
+		( 7 6 5 4 3 2 1 0 | 7 6 5 4 3 2 1 0 )
+		( 1 0| diff green |  dr-rg | db-dg  )
+		#3f AND ;qoi-chunk-luma/dg STA
+		;qoi-chunk-luma .on-bytes-received STZ2
+		#0001 .bytes-expected STZ2
+		JMP2r
+	}
+	( QOI_OP_RUN )
+	( 7 6 5 4 3 2 1 0 )
+	( 1 1| run length )
+	#3f AND INC
+	;qoi-last/r LDA
+	;qoi-last/g LDA
+	;qoi-last/b LDA
+	;qoi-last/a LDA
+	alpha-multiply
+	ROT STH STH2
+	#00
+	( wst: length count | rst: r g b )
+	&run-loop
+		ROTkr STHr STH2r
+		( wst: length count r g b | rst: r g b )
+		.on-pixel-received LDZ2 JSR2
+		INC
+		NEQk 
+	?&run-loop
+	POP2 POP2r POPr
+JMP2r
+
+
+@qoi-chunk-rgb ( {buffer}* -- )
+	             LDAk
+	ROT ROT INC2 LDAk 
+	ROT ROT INC2 LDA
+	;qoi-last/a LDA
+
+	qoi-stindex
+	Mqoi-stlast
+
+	alpha-multiply
+	.on-pixel-received LDZ2 JSR2	
+
+	;qoi-chunk .on-bytes-received STZ2
+	#0001 .bytes-expected STZ2
+JMP2r
+
+
+@qoi-chunk-rgba ( {buffer}* -- )
+	             LDAk 
+	ROT ROT INC2 LDAk 
+	ROT ROT INC2 LDAk
+	ROT ROT INC2 LDA
+
+	qoi-stindex
+	Mqoi-stlast
+
+	alpha-multiply
+	.on-pixel-received LDZ2 JSR2
+
+	;qoi-chunk .on-bytes-received STZ2
+	#0001 .bytes-expected STZ2
+JMP2r
+
+( 7 6 5 4 3 2 1 0 | 7 6 5 4 3 2 1 0 )
+( 0 1| diff green |  dr-rg | db-dg  )
+@qoi-chunk-luma ( {buffer}* -- )
+	LDA 
+	DUP #04 SFT 
+	[ ;&dg LDA ] ADD #28 SUB
+	;qoi-last/r LDA ADD
+	
+	[ ;&dg LDA ] #20 SUB
+	;qoi-last/g LDA ADD
+
+	ROT #0f AND
+	[ ;&dg LDA ] ADD #28 SUB
+	;qoi-last/b LDA ADD
+
+	;qoi-last/a LDA
+
+	qoi-stindex
+	Mqoi-stlast
+
+	alpha-multiply
+	.on-pixel-received LDZ2 JSR2
+
+	;qoi-chunk .on-bytes-received STZ2
+	#0001 .bytes-expected STZ2
+JMP2r
+	&dg $1
 
 
 ( misc. )
@@ -1009,7 +1220,7 @@ JMP2r
 BRK
 
 
-@display ( r8 g8 b8 )
+@display ( r8 g8 b8 -- )
 	pixel-to-4bit
 	[ LIT2 &get-color-func $2 ] JSR2
 	.Screen/pixel DEO
@@ -1025,7 +1236,6 @@ JMP2r
   1/4 1/4     )
 ( we use only one line buffer, and overwrite values behind current x )
 @display-dither ( r8 g8 b8 -- )
-	( LIT "C Mdebug-rgb )
 	;dither-buffer/b .Screen/x DEI2 ADD2 LDA
 	add8+8s-clamp STH
 
@@ -1124,7 +1334,15 @@ JMP2r
 @advance-screen-pos ( -- new-line )
 	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
 		#0000 .Screen/x DEO2 
-		.Screen/y DEI2 INC2 .Screen/y DEO2
+		.Screen/y DEI2 INC2
+		DUP2 .img-h LDZ2 NEQ2 ?{ 
+			LIT "( Mcout Mendl
+			POP2
+			( #0000 .Screen/y DEO2  )
+			( !stop-file-read )
+			#01 JMP2r
+		}
+		.Screen/y DEO2
 		#01 JMP2r
 	}
 	#00
@@ -1228,6 +1446,25 @@ JMP2r
 	LIT "- Mcout #ff SWP SUB INC print-byte
 JMP2r
 
+@str-starts-with ( {str}* {prefix}* -- bool )
+	STH2
+	STH2
+	#00
+	&loop
+		( index | prefix* str* )
+		DUP
+		#00 OVR Msk+ LDA
+		SWP2r
+		#00 ROT Msk+ LDA
+		SWP2r
+		DUP #00 NEQ ?{
+			POP2 POP POP2r POP2r #01 JMP2r
+		}
+		NEQ ?{ 
+			INC !&loop
+		}
+		POP POP2r POP2r #00 JMP2r
+
 
 
 
@@ -1235,9 +1472,9 @@ JMP2r
 ( on monochrome screens, colors 0 and 2 are black, 1 and 3 are white )
 @palettes [
 	&bw    [ 0f5a 0f5a 0f5a ]
-	&darkr [ 8f00 0ff0 0f0f ]
-	&darkg [ 0ff0 8f00 0f0f ]
-	&darkb [ 0ff0 0f0f 8f00 ]
+	&darkr [ 5f00 0ff0 0f0f ]
+	&darkg [ 0ff0 5f00 0f0f ]
+	&darkb [ 0ff0 0f0f 5f00 ]
 
 	&krgw  [ 0f0f 00ff 000f ]
 	&krbw  [ 0f0f 000f 00ff ]
@@ -1410,17 +1647,6 @@ JMP2r
 ( x / y )
 @div32 ( x** y** -> q** )
     z_divmod32 ;z_divmod32/quo0 LDA2 ;z_divmod32/quo1 LDA2 JMP2r
-
-( ( x % y ) )
-( @mod32 ( x** y** -> r** ) )
-(     z_divmod32 ;z_divmod32/rem0 LDA2 ;z_divmod32/rem1 LDA2 JMP2r )
-
-( ( x / y, x % y ) )
-( @divmod32 ( x** y** -> q** r** ) )
-(     z_divmod32 )
-(     ;z_divmod32/quo0 LDA2 ;z_divmod32/quo1 LDA2 )
-(     ;z_divmod32/rem0 LDA2 ;z_divmod32/rem1 LDA2 )
-(     JMP2r )
 
 ( private: calculate and store x / y and x % y )
 @z_divmod32 ( x** y** -> )
