@@ -201,7 +201,7 @@ BRK
 
 			( a good time to take a break? )
 			[ LIT &break-counter 00 ] INC
-			DUP #40 NEQ ?{
+			DUP #10 NEQ ?{
 				POP #00 [ ,&break-counter STR ]
 				BRK	
 			}
@@ -709,15 +709,18 @@ JMP2r
 	;part/count Msk+ Mload32
 	non-zero32 ?{ POP2r #0000 JMP2r }
 
+
 	( order of preference:
 	  if green has equal variation to red or blue, prefer green
 	  if red has equal variation to blue, prefer red )
+	( we will ignore values less than 1/64th of total count )
 
 	( find index of first non-zero element )
 	#00
 	&find-g-min
 		#00 OVR #20 SFT ;part/g-sort ADD2 Msk+ Mload32 
-		non-zero32 ?&found-g-min
+		;part/count Msk+ Mload32 #06 rshift32
+		gteq32 ?&found-g-min
 		INC
 	!&find-g-min
 	&found-g-min
@@ -726,7 +729,8 @@ JMP2r
 	#0f
 	&find-g-max
 		#00 OVR #20 SFT ;part/g-sort ADD2 Msk+ Mload32 
-		non-zero32 ?&found-g-max
+		;part/count Msk+ Mload32 #06 rshift32
+		gteq32 ?&found-g-max
 		#01 SUB
 	!&find-g-max
 	&found-g-max
@@ -738,7 +742,8 @@ JMP2r
 	#00
 	&find-r-min
 		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
-		non-zero32 ?&found-r-min
+		;part/count Msk+ Mload32 #06 rshift32
+		gteq32 ?&found-r-min
 		INC
 	!&find-r-min
 	&found-r-min
@@ -747,7 +752,8 @@ JMP2r
 	#0f
 	&find-r-max
 		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
-		non-zero32 ?&found-r-max
+		;part/count Msk+ Mload32 #06 rshift32
+		gteq32 ?&found-r-max
 		#01 SUB
 	!&find-r-max
 	&found-r-max
@@ -759,7 +765,8 @@ JMP2r
 	#00
 	&find-b-min
 		#00 OVR #20 SFT ;part/b-sort ADD2 Msk+ Mload32 
-		non-zero32 ?&found-b-min
+		;part/count Msk+ Mload32 #06 rshift32
+		gteq32 ?&found-b-min
 		INC
 	!&find-b-min
 	&found-b-min
@@ -768,7 +775,8 @@ JMP2r
 	#0f
 	&find-b-max
 		#00 OVR #20 SFT ;part/b-sort ADD2 Msk+ Mload32 
-		non-zero32 ?&found-b-max
+		;part/count Msk+ Mload32 #06 rshift32
+		gteq32 ?&found-b-max
 		#01 SUB
 	!&find-b-max
 	&found-b-max
@@ -801,11 +809,26 @@ JMP2r
 	&loop ( buffer* sumh* suml* ptr* )
 		LDA2k SWP2 INC2 INC2 LDAk2 SWP2 STH2 add32
 		OVR2 OVR2
+		LIT "M Mdebug32 Mendl
 		[ LIT2 &halfh 0000 LIT2 &halfl 0000 ] lt32 ?{ 
-			POP2 POP2 STH2r SWP2 SUB2 #02 SFT2 NIP
-			( correction for when median is in first chunk )
-			DUP ?{ POP #01 }
-			JMP2r	
+			( correction for when first half has
+			  too few colors )
+			( load current val again )
+			STH2kr #0002 SUB2 Mload32 
+			sub32
+			[ ,&halfh LDR2 ] [ ,&halfl LDR2 ] #01 rshift32
+			gteq32 ?{
+				( previous half had less than 1/4th )
+				STH2r
+				SWP2 SUB2 LIT "Q Mdebug-short
+				#02 SFT2 NIP LIT "Z Mdebug-byte
+				DUP #0f EQU ?{ INC } LIT "P Mdebug-byte
+				JMP2r
+			}
+			STH2r
+			SWP2 SUB2 LIT "S Mdebug-short
+			#02 SFT2 NIP LIT "T Mdebug-byte
+			JMP2r
 		}
 		STH2r INC2 INC2
 	!&loop
@@ -1180,7 +1203,9 @@ JMP2r
 	                DUP #30 SFT SWP #01 SFT ORA .color0-7/b STZ
 
 	Mmode-no-dithering is-mode ?{
+		( ;display-nop .on-pixel-received STZ2 )
 		;display-dither .on-pixel-received STZ2
+		( ;display .on-pixel-received STZ2 )
 		!&display-func-set
 	}
 	;display .on-pixel-received STZ2
@@ -1218,6 +1243,11 @@ JMP2r
 	;get-partition ;display/get-color-func STA2
 	;get-partition ;display-dither/get-color-func STA2
 BRK
+
+
+@display-nop 
+	POP2 POP 
+JMP2r
 
 
 @display ( r8 g8 b8 -- )
@@ -1294,6 +1324,8 @@ JMP2r
 
 
 ( chooses closest color from palette )
+( probably the worst method for finding distance )
+( r1-r0 + g1-g0 + b1-b0 )
 @pick-color ( r g b -- r g b c )
 	ROTk ( r g b g b r )
 	[ LIT &color0r $1 ] GTHk ?{ SWP } SUB
@@ -1335,14 +1367,14 @@ JMP2r
 	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
 		#0000 .Screen/x DEO2 
 		.Screen/y DEI2 INC2
-		DUP2 .img-h LDZ2 NEQ2 ?{ 
+		DUP2 .Screen/y DEO2
+		.img-h LDZ2 NEQ2 ?{ 
 			LIT "( Mcout Mendl
 			POP2
 			( #0000 .Screen/y DEO2  )
 			( !stop-file-read )
 			#01 JMP2r
 		}
-		.Screen/y DEO2
 		#01 JMP2r
 	}
 	#00
@@ -1528,9 +1560,9 @@ JMP2r
 @non-zero32 ( x** -> bool^ )
     ORA2 ORA JMP2r
 
-( x == 0 )
-@is-zero32 ( x** -> bool^ )
-    ORA2 #0000 EQU2 JMP2r
+( ( x == 0 ) )
+( @is-zero32 ( x** -> bool^ ) )
+(     ORA2 #0000 EQU2 JMP2r )
 
 ( x + y )
 @add32 ( xhi* xlo* yhi* ylo* -> zhi* zlo* )
@@ -1636,9 +1668,9 @@ JMP2r
 @lt32 ( x** y** -> bool^ )
     ROT2 SWP2 LTH2 ?{ LTH2 JMP2r } GTH2 #00 EQU JMP2r
 
-( x <= y )
-@lteq32 ( x** y** -> bool^ )
-    ROT2 SWP2 GTH2 ?{ GTH2 #00 EQU JMP2r } LTH2 JMP2r
+( ( x <= y ) )
+( @lteq32 ( x** y** -> bool^ ) )
+(     ROT2 SWP2 GTH2 ?{ GTH2 #00 EQU JMP2r } LTH2 JMP2r )
 
 ( x > y )
 @gteq32 ( x** y** -> bool^ )
@@ -1732,7 +1764,7 @@ JMP2r
 
 
 ( signed 8-bit values of quantization errors. divided by 2 )
-( 0x3000 = 4096*3 bytes; 4096 pixels per line max )
+( 0x1000 = 4096 pixels per line max )
 ( a couple bytes of padding, so that dithering algorithm does not need
   to check bounds )
 @dither-buffer [ 
