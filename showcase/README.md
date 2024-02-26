@@ -1,44 +1,44 @@
 I'm not much of an artist or a photographer, so here are some Creative Commons-licensed assets.
 
 
-## Autumn landscape 
+# Autumn landscape 
 
-### [Original](https://commons.wikimedia.org/wiki/Category:Landscapes_of_Ukraine#/media/File:Затишний_осінній_ранок.jpg) 
+## [Original](https://commons.wikimedia.org/wiki/Category:Landscapes_of_Ukraine#/media/File:Затишний_осінній_ранок.jpg) 
 
 [![Autumn landscape in Ukrainian heritage site](autumn.jpg)](https://commons.wikimedia.org/wiki/Category:Landscapes_of_Ukraine#/media/File:Затишний_осінній_ранок.jpg) 
 
-### Median cut algorithm + dither 
+## Median cut algorithm + dither 
 
 ![1st conversion](autumn-median-cut-dither.png) 
 
-### Red/Green/DarkBlue/White palette + dither
+## Red/Green/DarkBlue/White palette + dither
 
 ![2nd conversion](autumn-preset.png)
 
 
-## Mountain Dusk parallax background by ansimuz
+# Mountain Dusk parallax background by ansimuz
 
-### [Original](https://ansimuz.itch.io/mountain-dusk-parallax-background) 
+## [Original](https://ansimuz.itch.io/mountain-dusk-parallax-background) 
 
 [![Super Mountain Dusk](pixel-mountain.png)](https://ansimuz.itch.io/mountain-dusk-parallax-background) 
 
-### Median cut algorithm 
+## Median cut algorithm 
 
 ![1st conversion](pixel-mountain-median-cut.png) 
 
-### Median cut algorithm + dither |
+## Median cut algorithm + dither
 
 ![2nd conversion](pixel-mountain-median-cut-dither.png)
 
 
-## Cat
+# Cat
 
 Also, here's my cat.
 
-### Original 
+## Original 
 
 ![My cat](cat.jpg) 
 
-### Median cut algorithm + dither
+## Median cut algorithm + dither
 
 ![Conversion](cat-median-cut-dither.png)
