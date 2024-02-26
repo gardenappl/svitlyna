@@ -6,7 +6,7 @@ A "full-color" image viewer for the Uxn/Varvara 8-bit computer. This is mostly a
 
 Note that the Varvara computer specification only supports a palette of 4 colors, however those colors can be selected by the program. This is not enough to cover the whole RGB color space no matter how hard you try, but Svitlyna still tries her best.
 
-See the [showcase](showcase/README.md) for example images.
+**See the [showcase](showcase/README.md) for example images.**
 
 ## Features
 * [QOI](qoi.txt) file format support
@@ -47,7 +47,7 @@ Press [B] aka Alt to switch render modes. You can enable or disable dithering th
 
 ## Some notes on color
 
-If you look at the [showcase images](showcase/README.md) you might notice that the median cut algorithm can produce somewhat washed-out colors. This is because this algorithm attempts to find the *"average"* colors, which can approximate a majority of the pixels. 
+If you look at the **[showcase images](showcase/README.md)** you might notice that the median cut algorithm can produce somewhat washed-out colors. This is because this algorithm attempts to find the *"average"* colors, which can approximate a majority of the pixels. 
 
 This is good when you don't do any dithering, however, with dithering, this may not be necessarily the best approach. A simple color preset like Red-Green-DarkBlue-White can achieve arguably better results.
 
