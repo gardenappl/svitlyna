@@ -1,3 +1,5 @@
+https://qoiformat.org/
+
 A QOI file has a 14 byte header, followed by any number of data "chunks" and an
 8-byte end marker.
 
