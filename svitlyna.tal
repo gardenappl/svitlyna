@@ -31,8 +31,15 @@
 %Mmax-height { #1000 }
 %Mmax-name-length { #07ff }
 
-( 7-bit colors, used for dithering, 
-  one bit reserved for signed quantization errors )
+( 8-bit linear RGB colors, used for most processing )
+( display device palette is in sRGB )
+@color0 [ &r $1 &g $1 &b $1 ]
+@color1 [ &r $1 &g $1 &b $1 ]
+@color2 [ &r $1 &g $1 &b $1 ]
+@color3 [ &r $1 &g $1 &b $1 ]
+
+( 7-bit linear RGB colors, used for dithering, 
+  one bit reserved for signed arithmetic with quantization errors )
 @color0-7 [ &r $1 &g $1 &b $1 ]
 @color1-7 [ &r $1 &g $1 &b $1 ]
 @color2-7 [ &r $1 &g $1 &b $1 ]
@@ -91,7 +98,7 @@
 	;str/init print-str
 
 	;palettes/bw .current-palette STZ2
-	prepare-palette
+	prepare-palette-builtin
 
 	( Mmode-no-dithering #01 set-mode )
 
@@ -224,13 +231,7 @@
 
 @set-on-pixel-received ( bytes* -- )
 	DUP2 ;ff-next-pixel/on-pixel-received STA2
-	DUP2 ;ff-next-pixel/on-pixel-received-alpha STA2
-	DUP2 ;qoi-chunk/on-pixel-received-index STA2
-	DUP2 ;qoi-chunk/on-pixel-received-diff STA2
-	DUP2 ;qoi-chunk/on-pixel-received-run STA2
-	DUP2 ;qoi-chunk-rgb/on-pixel-received STA2
-	DUP2 ;qoi-chunk-rgba/on-pixel-received STA2
-	     ;qoi-chunk-luma/on-pixel-received STA2
+	     ;qoi-on-pixel-received/routine STA2
 	JMP2r
 
 
@@ -286,12 +287,12 @@
 @on-dpad-up ( -> )
 	Mmode-streaming is-mode ?end
 	.current-palette LDZ2 
-	#0006 ADD2
+	#000c ADD2
 	DUP2 ;palettes/detected-from-img LTH2 ?{
 		POP2 ;palettes
 	}
 	.current-palette STZ2
-	prepare-palette
+	prepare-palette-builtin
 	!display-init
 
 
@@ -301,9 +302,9 @@
 	DUP2 ;palettes GTH2 ?{
 		POP2 ;palettes/detected-from-img
 	}
-	#0006 SUB2
+	#000c SUB2
 	.current-palette STZ2
-	prepare-palette
+	prepare-palette-builtin
 	!display-init
 
 
@@ -365,18 +366,20 @@
 	INCk ?{
 		( alpha is zero )
 		POP
-		LDAkr      STHr ( r )
-		#0002 Msk+ LDA  ( g )
-		#0004 Ms+  LDA  ( b )
-		[ LIT2 &on-pixel-received $2 ] JMP2
+		LDAkr STHr     ( r )
+		#0002 Msk+ LDA ( g )
+		#0004 Ms+  LDA ( b )
+		!&result
 	}
 	#00 SWP
-	DUP2 #00 LDAkr      STHr MUL2 POP ( 00 aa a*r )
+	DUP2 #00 LDAkr STHr     MUL2 POP (    00 aa ar )
 	ROT ROT
-	DUP2 #00 #0002 Msk+ LDA  MUL2 POP ( 00 aa a*g )
+	DUP2 #00 #0002 Msk+ LDA MUL2 POP ( ar 00 aa ag )
 	ROT ROT
-	     #00 #0004 Ms+  LDA  MUL2 POP ( ar ag a*b )
-	[ LIT2 &on-pixel-received-alpha $2 ] JMP2
+	     #00 #0004 Ms+  LDA MUL2 POP ( ar ag ab )
+	&result
+	srgb-to-linear
+	[ LIT2 &on-pixel-received $2 ] JMP2
 
 
 @alpha-multiply ( r g b a -- r*a g*a b*a )
@@ -393,6 +396,7 @@
 
 @qoi-header1 ( {buffer}* -- )
 	#0004 ADD2
+	( width )
 	DUP2 LDA2 Mnon-zero2 ?too-large
 	INC2 INC2 LDA2 ;&w STA2
 
@@ -403,13 +407,18 @@
 
 
 @qoi-header2 ( {buffer}* -- )
-	;qoi-header1/w LDA2 ( width )
-	OVR2 LDA2 Mnon-zero2 ?too-large
-	SWP2 INC2 INC2 
-	LDA2 ( height )
-	handle-image-size
+	( height )
+	LDA2k Mnon-zero2 ?too-large
+	INC2 INC2 LDA2k
+	( width, again )
+	;qoi-header1/w LDA2
 
-	( ignore channels and colorspace )
+	SWP2 handle-image-size
+
+	INC2 INC2 INC2 ( ignore channel count )
+	LDA 
+	LIT "S Mdebug-byte Mendl
+	;qoi-is-linear STA
 	
 	;qoi-last
 	&loop
@@ -479,7 +488,7 @@
 		;qoi-index/a Ms+ LDA
 		Mqoi-stlast
 		alpha-multiply
-		[ LIT2 &on-pixel-received-index $2 ] JMP2
+		!qoi-on-pixel-received
 	}
 	( QOI_OP_DIFF )
 	DUP #06 SFT #01 NEQ ?{
@@ -492,7 +501,7 @@
 		Mqoi-stlast
 		qoi-stindex
 		alpha-multiply
-		[ LIT2 &on-pixel-received-diff $2 ] JMP2
+		!qoi-on-pixel-received
 	}
 	( QOI_OP_LUMA )
 	DUP #06 SFT #02 NEQ ?{
@@ -518,7 +527,7 @@
 	&run-loop
 		ROTkr STHr STH2r
 		( wst: length count r g b | rst: r g b )
-		[ LIT2 &on-pixel-received-run $2 ] JSR2
+		qoi-on-pixel-received
 		INC
 		NEQk 
 	?&run-loop
@@ -536,7 +545,7 @@
 	Mqoi-stlast
 
 	alpha-multiply
-	[ LIT2 &on-pixel-received $2 ] JSR2	
+	qoi-on-pixel-received
 
 	;qoi-chunk set-on-bytes-received
 	#0001 set-bytes-expected
@@ -553,7 +562,7 @@
 	Mqoi-stlast
 
 	alpha-multiply
-	[ LIT2 &on-pixel-received $2 ] JSR2
+	qoi-on-pixel-received
 
 	;qoi-chunk set-on-bytes-received
 	#0001 set-bytes-expected
@@ -581,12 +590,22 @@
 	Mqoi-stlast
 
 	alpha-multiply
-	[ LIT2 &on-pixel-received $2 ] JSR2
+	qoi-on-pixel-received
 
 	;qoi-chunk set-on-bytes-received
 	#0001 set-bytes-expected
 	JMP2r
 &dg $1
+
+
+@qoi-on-pixel-received ( r g b -- )
+	[ ,qoi-is-linear LDR ] ?{
+		srgb-to-linear
+	}
+	[ LIT2 &routine $2 ] JMP2
+
+
+@qoi-is-linear $1
 
 
 ( misc. )
@@ -603,11 +622,35 @@
 	JMP2r
 
 
-@prepare-palette ( -- )
+@prepare-palette-builtin ( -- )
 	.current-palette LDZ2 
-	          LDA2k .System/r DEO2
-	INC2 INC2 LDA2k .System/g DEO2 
-	INC2 INC2 LDA2  .System/b DEO2 
+	          LDA2k .color0/g STZ .color0/r STZ
+	INC2 INC2 LDA2k .color1/r STZ .color0/b STZ
+	INC2 INC2 LDA2k .color1/b STZ .color1/g STZ
+	INC2 INC2 LDA2k .color2/g STZ .color2/r STZ
+	INC2 INC2 LDA2k .color3/r STZ .color2/b STZ
+	INC2 INC2 LDA2  .color3/b STZ .color3/g STZ
+	( fallthrough )
+
+
+@prepare-palette ( -- )
+	.color0/r LDZ linear-to-srgb-single #f0 AND
+	.color1/r LDZ linear-to-srgb-single #04 SFT ORA
+	.color2/r LDZ linear-to-srgb-single #f0 AND
+	.color3/r LDZ linear-to-srgb-single #04 SFT ORA
+	.System/r DEO2
+
+	.color0/g LDZ linear-to-srgb-single #f0 AND
+	.color1/g LDZ linear-to-srgb-single #04 SFT ORA
+	.color2/g LDZ linear-to-srgb-single #f0 AND
+	.color3/g LDZ linear-to-srgb-single #04 SFT ORA
+	.System/g DEO2
+
+	.color0/b LDZ linear-to-srgb-single #f0 AND
+	.color1/b LDZ linear-to-srgb-single #04 SFT ORA
+	.color2/b LDZ linear-to-srgb-single #f0 AND
+	.color3/b LDZ linear-to-srgb-single #04 SFT ORA
+	.System/b DEO2
 	JMP2r
 
 
@@ -623,6 +666,55 @@
 
 
 ( image processing )
+
+
+( 8-bit sRGB triplet to 8-bit linear RGB triplet )
+@srgb-to-linear ( sr sg sb -- r g b )
+	ROT #00 SWP ;&lut ADD2 LDA
+	ROT #00 SWP ;&lut ADD2 LDA
+	ROT #00 SWP ;&lut ADD2 LDA
+	JMP2r	
+&lut [
+	00 00 00 00 00 00 00 01 01 01 01 01 01 01 01 01 
+	01 01 02 02 02 02 02 02 02 02 03 03 03 03 03 03 
+	04 04 04 04 04 05 05 05 05 06 06 06 06 07 07 07 
+	08 08 08 08 09 09 09 0a 0a 0a 0b 0b 0c 0c 0c 0d 
+	0d 0d 0e 0e 0f 0f 10 10 11 11 11 12 12 13 13 14 
+	14 15 16 16 17 17 18 18 19 19 1a 1b 1b 1c 1d 1d 
+	1e 1e 1f 20 20 21 22 23 23 24 25 25 26 27 28 29 
+	29 2a 2b 2c 2d 2d 2e 2f 30 31 32 33 33 34 35 36 
+	37 38 39 3a 3b 3c 3d 3e 3f 40 41 42 43 44 45 46 
+	47 48 49 4a 4c 4d 4e 4f 50 51 52 54 55 56 57 58 
+	5a 5b 5c 5d 5f 60 61 63 64 65 67 68 69 6b 6c 6d 
+	6f 70 72 73 74 76 77 79 7a 7c 7d 7f 80 82 83 85 
+	86 88 8a 8b 8d 8e 90 92 93 95 97 98 9a 9c 9d 9f 
+	a1 a3 a4 a6 a8 aa ab ad af b1 b3 b5 b7 b8 ba bc 
+	be c0 c2 c4 c6 c8 ca cc ce d0 d2 d4 d6 d8 da dc 
+	de e0 e2 e5 e7 e9 eb ed ef f2 f4 f6 f8 fa fd ff 
+]
+
+( single 8-bit linear RGB value to 8-bit sRGB value )
+@linear-to-srgb-single ( scolor -- color )
+	#00 SWP ;&lut ADD2 LDA
+	JMP2r	
+&lut [
+	00 0d 16 1c 22 26 2a 2e 32 35 38 3b 3d 40 42 45 
+	47 49 4b 4d 4f 51 53 55 56 58 5a 5c 5d 5f 60 62 
+	63 65 66 68 69 6a 6c 6d 6e 70 71 72 73 75 76 77 
+	78 79 7a 7c 7d 7e 7f 80 81 82 83 84 85 86 87 88 
+	89 8a 8b 8c 8d 8e 8f 90 91 92 93 94 94 95 96 97 
+	98 99 9a 9b 9b 9c 9d 9e 9f 9f a0 a1 a2 a3 a3 a4 
+	a5 a6 a7 a7 a8 a9 aa aa ab ac ad ad ae af af b0 
+	b1 b2 b2 b3 b4 b4 b5 b6 b6 b7 b8 b9 b9 ba bb bb 
+	bc bd bd be be bf c0 c0 c1 c2 c2 c3 c4 c4 c5 c5 
+	c6 c7 c7 c8 c8 c9 ca ca cb cb cc cd cd ce ce cf 
+	d0 d0 d1 d1 d2 d2 d3 d4 d4 d5 d5 d6 d6 d7 d7 d8 
+	d8 d9 da da db db dc dc dd dd de de df df e0 e0 
+	e1 e2 e2 e3 e3 e4 e4 e5 e5 e6 e6 e7 e7 e8 e8 e9 
+	e9 ea ea eb eb ec ec ed ed ee ee ee ef ef f0 f0 
+	f1 f1 f2 f2 f3 f3 f4 f4 f5 f5 f6 f6 f6 f7 f7 f8 
+	f8 f9 f9 fa fa fb fb fb fc fc fd fd fe fe ff ff
+]
 
 
 ( partitioning color space, via median cut algorithm )
@@ -1154,24 +1246,21 @@
 
 
 @prepare-palette-avg ( -- )
-	;avg-colors/color0r LDA #40 SFT
-	;avg-colors/color1r LDA ORA
-	;avg-colors/color2r LDA #40 SFT
-	;avg-colors/color3r LDA ORA
-	.System/r DEO2
+	;avg-colors/color0r LDA DUP #40 SFT ORA .color0/r STZ
+	;avg-colors/color1r LDA DUP #40 SFT ORA .color1/r STZ
+	;avg-colors/color2r LDA DUP #40 SFT ORA .color2/r STZ
+	;avg-colors/color3r LDA DUP #40 SFT ORA .color3/r STZ
 
-	;avg-colors/color0g LDA #40 SFT
-	;avg-colors/color1g LDA ORA
-	;avg-colors/color2g LDA #40 SFT
-	;avg-colors/color3g LDA ORA
-	.System/g DEO2
+	;avg-colors/color0g LDA DUP #40 SFT ORA .color0/g STZ
+	;avg-colors/color1g LDA DUP #40 SFT ORA .color1/g STZ
+	;avg-colors/color2g LDA DUP #40 SFT ORA .color2/g STZ
+	;avg-colors/color3g LDA DUP #40 SFT ORA .color3/g STZ
 
-	;avg-colors/color0b LDA #40 SFT
-	;avg-colors/color1b LDA ORA
-	;avg-colors/color2b LDA #40 SFT
-	;avg-colors/color3b LDA ORA
-	.System/b DEO2
-	JMP2r
+	;avg-colors/color0b LDA DUP #40 SFT ORA .color0/b STZ
+	;avg-colors/color1b LDA DUP #40 SFT ORA .color1/b STZ
+	;avg-colors/color2b LDA DUP #40 SFT ORA .color2/b STZ
+	;avg-colors/color3b LDA DUP #40 SFT ORA .color3/b STZ
+	!prepare-palette
 
 
 
@@ -1179,36 +1268,49 @@
 
 
 @display-init ( -> )
-	.System/r DEI2
-	LIT "R Mdebug-short Mendl
-	DUP #0f AND     DUP ;pick-color/color3r STA
-	                DUP #30 SFT SWP #01 SFT ORA .color3-7/r STZ
-	#f0 AND #04 SFT DUP ;pick-color/color2r STA
-	                DUP #30 SFT SWP #01 SFT ORA .color2-7/r STZ
-	DUP #0f AND     DUP ;pick-color/color1r STA
-	                DUP #30 SFT SWP #01 SFT ORA .color1-7/r STZ
-	#f0 AND #04 SFT DUP ;pick-color/color0r STA
-	                DUP #30 SFT SWP #01 SFT ORA .color0-7/r STZ
-	.System/g DEI2
-	LIT "G Mdebug-short Mendl
-	DUP #0f AND     DUP ;pick-color/color3g STA
-	                DUP #30 SFT SWP #01 SFT ORA .color3-7/g STZ
-	#f0 AND #04 SFT DUP ;pick-color/color2g STA
-	                DUP #30 SFT SWP #01 SFT ORA .color2-7/g STZ
-	DUP #0f AND     DUP ;pick-color/color1g STA
-	                DUP #30 SFT SWP #01 SFT ORA .color1-7/g STZ
-	#f0 AND #04 SFT DUP ;pick-color/color0g STA
-	                DUP #30 SFT SWP #01 SFT ORA .color0-7/g STZ
-	.System/b DEI2
-	LIT "B Mdebug-short Mendl
-	DUP #0f AND     DUP ;pick-color/color3b STA
-	                DUP #30 SFT SWP #01 SFT ORA .color3-7/b STZ
-	#f0 AND #04 SFT DUP ;pick-color/color2b STA
-	                DUP #30 SFT SWP #01 SFT ORA .color2-7/b STZ
-	DUP #0f AND     DUP ;pick-color/color1b STA
-	                DUP #30 SFT SWP #01 SFT ORA .color1-7/b STZ
-	#f0 AND #04 SFT DUP ;pick-color/color0b STA
-	                DUP #30 SFT SWP #01 SFT ORA .color0-7/b STZ
+	.color0/r LDZ LIT "R Mdebug-byte
+	DUP #01 SFT .color0-7/r STZ
+	#04 SFT ;pick-color/color0r STA
+	.color0/g LDZ LIT "G Mdebug-byte
+	DUP #01 SFT .color0-7/g STZ
+	#04 SFT ;pick-color/color0g STA
+	.color0/b LDZ LIT "B Mdebug-byte
+	DUP #01 SFT .color0-7/b STZ
+	#04 SFT ;pick-color/color0b STA
+	Mendl
+
+	.color1/r LDZ LIT "R Mdebug-byte
+	DUP #01 SFT .color1-7/r STZ
+	#04 SFT ;pick-color/color1r STA
+	.color1/g LDZ LIT "G Mdebug-byte
+	DUP #01 SFT .color1-7/g STZ
+	#04 SFT ;pick-color/color1g STA
+	.color1/b LDZ LIT "B Mdebug-byte
+	DUP #01 SFT .color1-7/b STZ
+	#04 SFT ;pick-color/color1b STA
+	Mendl
+
+	.color2/r LDZ LIT "R Mdebug-byte
+	DUP #01 SFT .color2-7/r STZ
+	#04 SFT ;pick-color/color2r STA
+	.color2/g LDZ LIT "G Mdebug-byte
+	DUP #01 SFT .color2-7/g STZ
+	#04 SFT ;pick-color/color2g STA
+	.color2/b LDZ LIT "B Mdebug-byte
+	DUP #01 SFT .color2-7/b STZ
+	#04 SFT ;pick-color/color2b STA
+	Mendl
+
+	.color3/r LDZ LIT "R Mdebug-byte
+	DUP #01 SFT .color3-7/r STZ
+	#04 SFT ;pick-color/color3r STA
+	.color3/g LDZ LIT "G Mdebug-byte
+	DUP #01 SFT .color3-7/g STZ
+	#04 SFT ;pick-color/color3g STA
+	.color3/b LDZ LIT "B Mdebug-byte
+	DUP #01 SFT .color3-7/b STZ
+	#04 SFT ;pick-color/color3b STA
+	Mendl
 
 	Mmode-no-dithering is-mode ?{
 		( ;display-nop .on-pixel-received STZ2 )
@@ -1390,7 +1492,7 @@
 
 
 @done ( -- )
-	#80 .System/state DEO BRK
+	( #80 .System/state DEO BRK )
 	;str/end print-str
 	BRK
 
@@ -1504,33 +1606,14 @@
 
 
 
-
-( in the .System/r,g,b format. r0r1r2r3, g0g1g2g3, b0b1b2b3 )
 ( on monochrome screens, colors 0 and 2 are black, 1 and 3 are white )
 @palettes [
-	&bw    [ 0f5a 0f5a 0f5a ]
-	&darkr [ 5f00 0ff0 0f0f ]
-	&darkg [ 0ff0 5f00 0f0f ]
-	&darkb [ 0ff0 0f0f 5f00 ]
-
-	&krgw  [ 0f0f 00ff 000f ]
-	&krbw  [ 0f0f 000f 00ff ]
-	&kgbw  [ 000f 0f0f 00ff ]
-
-	&kcmy  [ 00ff 0f0f 0ff0 ]
-	&kcmw  [ 00ff 0f0f 0fff ]
-	&kcyw  [ 00ff 0fff 0f0f ]
-	&kmyw  [ 0fff 00ff 0f0f ]
-
-	&kcrw  [ 00ff 0f0f 0f0f ]
-	&kmgw  [ 0f0f 00ff 0f0f ]
-	&kybw  [ 0f0f 0f0f 00ff ]
-
-	&krgb  [ 0f00 00f0 000f ]
-	&rgbw  [ f00f 0f0f 00ff ]
+	&bw    [ 00 00 00  ff ff ff  55 55 55  aa aa aa ]
+	&color [ 00 00 00  aa ee ff  ee ff 00  ff 00 00 ]
+	( &rgbw  [ 00 00 ff  ff ff ff  00 ff 00  ff 00 00 ] )
+	&darkb [ 00 00 88  ff ff ff  00 ff 00  ff 00 00 ]
 	&detected-from-img ( special palette )
 ]
-
 
 
 @str [
