@@ -41,9 +41,6 @@
 %Mfile-buffer-length { #4000 }
 @bytes-expected $2
 
-@on-bytes-received $2
-@on-pixel-received $2
-@on-file-end $2
 
 @part-split-step $1
 @current-palette $2
@@ -101,13 +98,13 @@
 	;on-controller-input .Controller/vector DEO2
 
 	.Console/type DEI ?{ 
-		;on-stdin .Console/vector DEO2	
+		;read-stdin .Console/vector DEO2	
 		Mmode-streaming .current-mode STZ
 		;str/read print-str ;str/read-stdin print-str
 
-		;detect-magic .on-bytes-received STZ2
-		#0008 .bytes-expected STZ2
-		;display .on-pixel-received STZ2
+		;detect-magic set-on-bytes-received
+		#0008 set-bytes-expected
+		;display set-on-pixel-received
 
 		!display-init
 	}
@@ -116,13 +113,13 @@
 	BRK
 
 
-@on-stdin ( -> )
+@read-stdin ( -> )
 	[ LIT2 &index 0000 ] 
 	DUP2 ;file-buf ADD2 
 	.Console/read DEI ROT ROT STA
-	INC2 DUP2 .bytes-expected LDZ2 NEQ2 ?{
+	INC2 DUP2 [ LIT2 &bytes-expected $2 ] NEQ2 ?{
 		( call subroutine )
-		;file-buf .on-bytes-received LDZ2 JSR2
+		;file-buf [ LIT2 &on-bytes-received $2 ] JSR2
 		POP2 #0000 [ ,&index STR2 ]
 		BRK
 	}
@@ -159,8 +156,8 @@
 	;str/read print-str ;str/read-file print-str
 	;filename print-str Mendl
 
-	#0008 .bytes-expected STZ2
-	;detect-magic .on-bytes-received STZ2
+	;detect-magic set-on-bytes-received
+	#0008 set-bytes-expected
 
 	;filename .File/name DEO2
 	Mfile-buffer-length .File/length DEO2
@@ -177,12 +174,12 @@
 
 	&loop
 		[ LIT2 &window =file-buf ] 
-		DUP2 .bytes-expected LDZ2 ADD2 ( next window )
+		DUP2 [ LIT2 &bytes-expected $2 ] ADD2 ( next window )
 		[ LIT2 &window-end =file-buf/end ]
 		GTH2k ?{
 			POP2
 			[ ,&window STR2 ]
-			.on-bytes-received LDZ2 JSR2
+			[ LIT2 &on-bytes-received $2 ] JSR2
 			!&loop
 
 			( copy cmd )
@@ -210,7 +207,36 @@
 			!read-buffer
 		}
 		#0000 .Screen/vector DEO2
-		.on-file-end LDZ2 JMP2
+		[ LIT2 &on-file-end $2 ] JMP2
+
+
+@set-on-bytes-received ( {routine}* -- )
+	DUP2 ;read-buffer/on-bytes-received STA2
+	     ;read-stdin/on-bytes-received STA2
+	JMP2r
+
+
+@set-bytes-expected ( bytes* -- )
+	DUP2 ;read-buffer/bytes-expected STA2
+	     ;read-stdin/bytes-expected STA2
+	JMP2r
+
+
+@set-on-pixel-received ( bytes* -- )
+	DUP2 ;ff-next-pixel/on-pixel-received STA2
+	DUP2 ;ff-next-pixel/on-pixel-received-alpha STA2
+	DUP2 ;qoi-chunk/on-pixel-received-index STA2
+	DUP2 ;qoi-chunk/on-pixel-received-diff STA2
+	DUP2 ;qoi-chunk/on-pixel-received-run STA2
+	DUP2 ;qoi-chunk-rgb/on-pixel-received STA2
+	DUP2 ;qoi-chunk-rgba/on-pixel-received STA2
+	     ;qoi-chunk-luma/on-pixel-received STA2
+	JMP2r
+
+
+@set-on-file-end ( bytes* -- )
+	;read-buffer/on-file-end STA2
+	JMP2r
 
 
 
@@ -303,8 +329,8 @@
 	}
 	;&farbfeld print-str Mendl
 	POP2
-	;ff-size .on-bytes-received STZ2
-	#0008 .bytes-expected STZ2
+	;ff-size set-on-bytes-received
+	#0008 set-bytes-expected
 	JMP2r
 
 	[ &farbfeld "farbfeld 00 ]
@@ -326,8 +352,8 @@
 
 	handle-image-size
 
-	#0008 .bytes-expected STZ2
-	;ff-next-pixel .on-bytes-received STZ2
+	;ff-next-pixel set-on-bytes-received
+	#0008 set-bytes-expected
 	JMP2r
 
 	
@@ -342,7 +368,7 @@
 		LDAkr      STHr ( r )
 		#0002 Msk+ LDA  ( g )
 		#0004 Ms+  LDA  ( b )
-		.on-pixel-received LDZ2 JMP2
+		[ LIT2 &on-pixel-received $2 ] JMP2
 	}
 	#00 SWP
 	DUP2 #00 LDAkr      STHr MUL2 POP ( 00 aa a*r )
@@ -350,7 +376,7 @@
 	DUP2 #00 #0002 Msk+ LDA  MUL2 POP ( 00 aa a*g )
 	ROT ROT
 	     #00 #0004 Ms+  LDA  MUL2 POP ( ar ag a*b )
-	.on-pixel-received LDZ2 JMP2
+	[ LIT2 &on-pixel-received-alpha $2 ] JMP2
 
 
 @alpha-multiply ( r g b a -- r*a g*a b*a )
@@ -361,8 +387,8 @@
 	STHk #00 ROT #00 STHr MUL2 POP STH 
 	( r a | b*a g*a )
 	STH  #00 SWP #00 STHr MUL2 POP
-	STH2r
-	.on-pixel-received LDZ2 JMP2
+	STH2r SWP2r
+	JMP2r
 
 
 @qoi-header1 ( {buffer}* -- )
@@ -370,8 +396,8 @@
 	DUP2 LDA2 Mnon-zero2 ?too-large
 	INC2 INC2 LDA2 ;&w STA2
 
-	;qoi-header2 .on-bytes-received STZ2
-	#0006 .bytes-expected STZ2		
+	;qoi-header2 set-on-bytes-received
+	#0006 set-bytes-expected
 	JMP2r
 &w $2
 
@@ -394,8 +420,8 @@
 	POP2
 	#ff ;qoi-last/a STA
 
-	;qoi-chunk .on-bytes-received STZ2
-	#0001 .bytes-expected STZ2
+	;qoi-chunk set-on-bytes-received
+	#0001 set-bytes-expected
 	JMP2r
 
 
@@ -429,16 +455,16 @@
 	( QOI_OP_RGB )
 	#fe NEQk ?{
 		POP2
-		;qoi-chunk-rgb .on-bytes-received STZ2
-		#0003 .bytes-expected STZ2
+		;qoi-chunk-rgb set-on-bytes-received
+		#0003 set-bytes-expected
 		JMP2r
 	}
 	POP
 	( QOI_OP_RGBA )
 	#ff NEQk ?{
 		POP2
-		;qoi-chunk-rgba .on-bytes-received STZ2	
-		#0004 .bytes-expected STZ2
+		;qoi-chunk-rgba set-on-bytes-received
+		#0004 set-bytes-expected
 		JMP2r
 	}
 	POP
@@ -453,8 +479,7 @@
 		;qoi-index/a Ms+ LDA
 		Mqoi-stlast
 		alpha-multiply
-		.on-pixel-received LDZ2
-		JMP2
+		[ LIT2 &on-pixel-received-index $2 ] JMP2
 	}
 	( QOI_OP_DIFF )
 	DUP #06 SFT #01 NEQ ?{
@@ -467,16 +492,15 @@
 		Mqoi-stlast
 		qoi-stindex
 		alpha-multiply
-		.on-pixel-received LDZ2
-		JMP2
+		[ LIT2 &on-pixel-received-diff $2 ] JMP2
 	}
 	( QOI_OP_LUMA )
 	DUP #06 SFT #02 NEQ ?{
 		( 7 6 5 4 3 2 1 0 | 7 6 5 4 3 2 1 0 )
 		( 1 0| diff green |  dr-rg | db-dg  )
 		#3f AND ;qoi-chunk-luma/dg STA
-		;qoi-chunk-luma .on-bytes-received STZ2
-		#0001 .bytes-expected STZ2
+		;qoi-chunk-luma set-on-bytes-received
+		#0001 set-bytes-expected
 		JMP2r
 	}
 	( QOI_OP_RUN )
@@ -494,7 +518,7 @@
 	&run-loop
 		ROTkr STHr STH2r
 		( wst: length count r g b | rst: r g b )
-		.on-pixel-received LDZ2 JSR2
+		[ LIT2 &on-pixel-received-run $2 ] JSR2
 		INC
 		NEQk 
 	?&run-loop
@@ -512,10 +536,10 @@
 	Mqoi-stlast
 
 	alpha-multiply
-	.on-pixel-received LDZ2 JSR2	
+	[ LIT2 &on-pixel-received $2 ] JSR2	
 
-	;qoi-chunk .on-bytes-received STZ2
-	#0001 .bytes-expected STZ2
+	;qoi-chunk set-on-bytes-received
+	#0001 set-bytes-expected
 	JMP2r
 
 
@@ -529,10 +553,10 @@
 	Mqoi-stlast
 
 	alpha-multiply
-	.on-pixel-received LDZ2 JSR2
+	[ LIT2 &on-pixel-received $2 ] JSR2
 
-	;qoi-chunk .on-bytes-received STZ2
-	#0001 .bytes-expected STZ2
+	;qoi-chunk set-on-bytes-received
+	#0001 set-bytes-expected
 	JMP2r
 
 
@@ -557,10 +581,10 @@
 	Mqoi-stlast
 
 	alpha-multiply
-	.on-pixel-received LDZ2 JSR2
+	[ LIT2 &on-pixel-received $2 ] JSR2
 
-	;qoi-chunk .on-bytes-received STZ2
-	#0001 .bytes-expected STZ2
+	;qoi-chunk set-on-bytes-received
+	#0001 set-bytes-expected
 	JMP2r
 &dg $1
 
@@ -930,8 +954,8 @@
 		}
 	}
 
-	;palette-split .on-pixel-received STZ2
-	;palette-split-end .on-file-end STZ2
+	;palette-split set-on-pixel-received
+	;palette-split-end set-on-file-end
 	;read-file .Screen/vector DEO2
 	BRK
 
@@ -1067,8 +1091,8 @@
 	#03 part-init
 	get-partition-optimize
 
-	;palette-split .on-pixel-received STZ2
-	;avg-colors .on-file-end STZ2
+	;palette-split set-on-pixel-received
+	;avg-colors set-on-file-end
 	;read-file .Screen/vector DEO2
 	JMP2r
 
@@ -1188,14 +1212,14 @@
 
 	Mmode-no-dithering is-mode ?{
 		( ;display-nop .on-pixel-received STZ2 )
-		;display-dither .on-pixel-received STZ2
+		;display-dither set-on-pixel-received
 		( ;display .on-pixel-received STZ2 )
 		!&display-func-set
 	}
-	;display .on-pixel-received STZ2
+	;display set-on-pixel-received
 	&display-func-set
 
-	;done .on-file-end STZ2
+	;done set-on-file-end
 	.current-mode LDZ Mmode-streaming AND ?{
 		;read-file .Screen/vector DEO2
 	}
@@ -1366,7 +1390,7 @@
 
 
 @done ( -- )
-	( #80 .System/state DEO BRK )
+	#80 .System/state DEO BRK
 	;str/end print-str
 	BRK
 
