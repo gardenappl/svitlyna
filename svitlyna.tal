@@ -702,10 +702,29 @@
 	non-zero32 ?{ POP2r #0000 JMP2r }
 
 
-	( order of preference:
-	  if green has equal variation to red or blue, prefer green
-	  if red has equal variation to blue, prefer red )
-	( we will ignore values less than 1/64th of total count )
+	( find index of first non-zero element )
+	#00
+	&find-r-min
+		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
+		;part/count Msk+ Mload32 #06 rshift32
+		gteq32 ?&found-r-min
+		INC
+	!&find-r-min
+	&found-r-min
+	LIT "m Mcout LIT "R Mdebug-byte
+	( find index of last non-zero element )
+	#0f
+	&find-r-max
+		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
+		;part/count Msk+ Mload32 #06 rshift32
+		gteq32 ?&found-r-max
+		#01 SUB
+	!&find-r-max
+	&found-r-max
+	LIT "M Mcout LIT "R Mdebug-byte
+	SWP SUB
+	LIT "V Mcout LIT "R Mdebug-byte Mendl
+
 
 	( find index of first non-zero element )
 	#00
@@ -730,28 +749,6 @@
 	SWP SUB
 	LIT "V Mcout LIT "G Mdebug-byte Mendl
 
-	( find index of first non-zero element )
-	#00
-	&find-r-min
-		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
-		;part/count Msk+ Mload32 #06 rshift32
-		gteq32 ?&found-r-min
-		INC
-	!&find-r-min
-	&found-r-min
-	LIT "m Mcout LIT "R Mdebug-byte
-	( find index of last non-zero element )
-	#0f
-	&find-r-max
-		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
-		;part/count Msk+ Mload32 #06 rshift32
-		gteq32 ?&found-r-max
-		#01 SUB
-	!&find-r-max
-	&found-r-max
-	LIT "M Mcout LIT "R Mdebug-byte
-	SWP SUB
-	LIT "V Mcout LIT "R Mdebug-byte Mendl
 
 	( find index of first non-zero element )
 	#00
@@ -775,16 +772,24 @@
 	LIT "M Mcout LIT "B Mdebug-byte
 	SWP SUB
 	LIT "V Mcout LIT "B Mdebug-byte Mendl
+
 	Mendl
 
 
 	POP2r
 
 	Mb STH
-	( wst: gvar rvar max-var | rst: max-var-chan )
-	LTHk ?{ POPr Mr STH SWP } NIP 
-	( wst: gvar max-var | rst: max-var-chan )
-	LTHk ?{ POPr Mg STH SWP } NIP 
+	( wst: rvar gvar max-var | rst: max-var-chan )
+	( adjust variation score for blue by 5/4th )
+	DUP2 #05 MUL #02 SFT
+	( DUP2 )
+	LTH ?{ POPr Mg STH SWP } NIP 
+
+	( wst: rvar max-var | rst: max-var-chan )
+	( adjust variation score for red by 9/8th )
+	OVR #09 MUL #03 SFT OVR
+	( DUP2 )
+	LTH ?{ POPr Mr STH SWP } NIP 
 	
 	&done
 	STHr SWP
