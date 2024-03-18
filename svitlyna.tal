@@ -46,7 +46,6 @@
 @color3-7 [ &r $1 &g $1 &b $1 ]
 
 %Mfile-buffer-length { #4000 }
-@bytes-expected $2
 
 
 @part-split-step $1
@@ -97,15 +96,12 @@
 
 	;str/init print-str
 
-	;palettes/bw .current-palette STZ2
-	prepare-palette-builtin
-
-	( Mmode-no-dithering #01 set-mode )
-
 	;on-controller-input .Controller/vector DEO2
 
 	.Console/type DEI ?{ 
 		;read-stdin .Console/vector DEO2	
+		;palettes/color .current-palette STZ2
+		prepare-palette-builtin
 		Mmode-streaming .current-mode STZ
 		;str/read print-str ;str/read-stdin print-str
 
@@ -115,7 +111,6 @@
 
 		!display-init
 	}
-
 	;read-argument .Console/vector DEO2
 	BRK
 
@@ -144,8 +139,9 @@
 		Mendl
 		
 		LIT2 00 -part-split-step STZ
-		( !palette-split-init )
-		!display-init
+		;palettes/detected-from-img .current-palette STZ2
+		!palette-split-init
+		( !display-init )
 	}
 	.Console/read DEI 
 	[ ,&name-length LDR2 ] ;filename ADD2 STA
@@ -747,9 +743,10 @@
 		INC2 INC2 
 		DUP2 ;part/r-sort Msk+ ADD2 LDA2 Mprint-short
 		INC2 INC2 
-		#20 Mcout
 		DUP2 
-		DUP #40 SFT ?{ Mendl }
+		DUP #40 SFT ?{ Mendl !&end-print-r }
+		#20 Mcout
+		&end-print-r
 		#0040 NEQ2
 	?&loopr
 
@@ -762,9 +759,10 @@
 		INC2 INC2 
 		DUP2 ;part/g-sort Msk+ ADD2 LDA2 Mprint-short
 		INC2 INC2 
-		#20 Mcout
 		DUP2 
-		DUP #40 SFT ?{ Mendl }
+		DUP #40 SFT ?{ Mendl !&end-print-g }
+		#20 Mcout
+		&end-print-g
 		#0040 NEQ2
 	?&loopg
 
@@ -777,9 +775,10 @@
 		INC2 INC2 
 		DUP2 ;part/b-sort Msk+ ADD2 LDA2 Mprint-short
 		INC2 INC2 
-		#20 Mcout
 		DUP2 
-		DUP #40 SFT ?{ Mendl }
+		DUP #40 SFT ?{ Mendl !&end-print-b }
+		#20 Mcout
+		&end-print-b
 		#0040 NEQ2
 	?&loopb
 	POP2
@@ -813,7 +812,6 @@
 @part-get-max-var ( part -- max-var-chan max-var )
 	#00 SWP Mpart-size MUL2 
 	STH2
-	( load 32-bit count )
 	;part/count Msk+ Mload32
 	non-zero32 ?{ POP2r #0000 JMP2r }
 
@@ -828,7 +826,8 @@
 	&find-g-min
 		#00 OVR #20 SFT ;part/g-sort ADD2 Msk+ Mload32 
 		;part/count Msk+ Mload32 #06 rshift32
-		gteq32 ?&found-g-min
+		gteq32 
+		?&found-g-min
 		INC
 	!&find-g-min
 	&found-g-min
@@ -838,7 +837,8 @@
 	&find-g-max
 		#00 OVR #20 SFT ;part/g-sort ADD2 Msk+ Mload32 
 		;part/count Msk+ Mload32 #06 rshift32
-		gteq32 ?&found-g-max
+		gteq32 
+		?&found-g-max
 		#01 SUB
 	!&find-g-max
 	&found-g-max
@@ -851,7 +851,8 @@
 	&find-r-min
 		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
 		;part/count Msk+ Mload32 #06 rshift32
-		gteq32 ?&found-r-min
+		gteq32 
+		?&found-r-min
 		INC
 	!&find-r-min
 	&found-r-min
@@ -861,7 +862,8 @@
 	&find-r-max
 		#00 OVR #20 SFT ;part/r-sort ADD2 Msk+ Mload32 
 		;part/count Msk+ Mload32 #06 rshift32
-		gteq32 ?&found-r-max
+		gteq32 
+		?&found-r-max
 		#01 SUB
 	!&find-r-max
 	&found-r-max
@@ -874,7 +876,8 @@
 	&find-b-min
 		#00 OVR #20 SFT ;part/b-sort ADD2 Msk+ Mload32 
 		;part/count Msk+ Mload32 #06 rshift32
-		gteq32 ?&found-b-min
+		gteq32 
+		?&found-b-min
 		INC
 	!&find-b-min
 	&found-b-min
@@ -884,7 +887,8 @@
 	&find-b-max
 		#00 OVR #20 SFT ;part/b-sort ADD2 Msk+ Mload32 
 		;part/count Msk+ Mload32 #06 rshift32
-		gteq32 ?&found-b-max
+		gteq32 
+		?&found-b-max
 		#01 SUB
 	!&find-b-max
 	&found-b-max
@@ -1371,55 +1375,84 @@
   1/4 1/4     )
 ( we use only one line buffer, and overwrite values behind current x )
 @display-dither ( r8 g8 b8 -- )
+	( LIT "I Mdebug-rgb Mendl )
+	( LIT "B Mcout )
+	#01 SFT
 	;dither-buffer/b .Screen/x DEI2 ADD2 LDA
-	add8+8s-clamp STH
+	( LIT "B Mcout DUP print-sbyte )
+	add8s-clamp-pos STH
 
-	( r8 g8 | b-cor )
+	( r8 g8 | b-cor7 )
+	#01 SFT
 	;dither-buffer/g .Screen/x DEI2 ADD2 LDA 
-	add8+8s-clamp STH
+	( LIT "G Mcout DUP print-sbyte )
+	add8s-clamp-pos STH
 
-	( r8 | b-cor g-cor )
+	( r8 | b-cor7 g-cor7 )
+	#01 SFT
 	;dither-buffer/r .Screen/x DEI2 ADD2 LDA
-	( LIT "+ Mcout DUP print-sbyte )
-	add8+8s-clamp STH
+	( LIT "R Mcout DUP print-sbyte )
+	add8s-clamp-pos STH
+	( Mendl )
 
 	ROTkr 
-	( | b-cor8 g-cor8 r-cor8 g-cor8 r-cor8 b-cor8 )
-	STHr #04 SFT
-	STHr #04 SFT SWP
-	STHr #04 SFT SWP
-	( r-cor g-cor b-cor | b-cor8 g-cor8 r-cor8 )
+	( | b-cor7 g-cor7 r-cor7 g-cor7 r-cor7 b-cor7 )
+	STHr #03 SFT
+	STHr #03 SFT SWP
+	STHr #03 SFT SWP
+	( LIT "C Mdebug-rgb Mendl )
+	( r-cor4 g-cor4 b-cor4 | b-cor7 g-cor7 r-cor7 )
 	[ LIT2 &get-color-func $2 ] JSR2
+	( LIT "P Mdebug-byte Mendl )
+
+	( LIT "R Mcout )
+	( r-cor4 g-cor4 b-cor4 col | b-cor7 g-cor7 r-cor7 )
+	STHr #01 SFT ( ... col r-cor-half7 )
+	( LIT "C Mdebug-byte )
+	OVR #03 MUL .color0/r ADD LDZ #02 SFT ( r-print-half7 )
 	( LIT "P Mdebug-byte )
-
-	( r-cor g-cor b-cor col | b-cor8 g-cor8 r-cor8 )
-	STHr #01 SFT ( r-cor-half )
-	OVR #03 MUL .color0-7/r ADD LDZ ( r-printed-half )
-	SUB ( r-deltas )
+	SUB ( r-delta-halfS )
+	( LIT "D Mcout DUP print-sbyte )
 	;dither-buffer/r .Screen/x DEI2 ADD2 STH2k
-	( r-deltas addr* | addr* )
+	( r-delta-halfS addr* | addr* )
 	INC2       LDA OVR ADD STH2kr INC2      STA  ( next x, add )
 	               half8s  STH2kr           STAk ( cur x, write )
 	#0001 SUB2 LDA ADD     STH2r #0001 SUB2 STA  ( prev x, add )
+	( Mendl )
 
-	STHr #01 SFT ( g-cor-half )
-	OVR #03 MUL .color0-7/g ADD LDZ ( g-printed-half )
-	SUB ( g-deltas )
+	( LIT "G Mcout )
+	( r-cor4 g-cor4 b-cor4 col | b-cor7 g-cor7 )
+	STHr #01 SFT ( ... col g-cor-half7 )
+	( LIT "C Mdebug-byte )
+	OVR #03 MUL .color0/g ADD LDZ #02 SFT ( g-print-half7 )
+	( LIT "P Mdebug-byte )
+	SUB ( g-delta-halfS )
+	( LIT "D Mcout DUP print-sbyte )
 	;dither-buffer/g .Screen/x DEI2 ADD2 STH2k
-	( g-deltas addr* )
+	( g-delta-halfS addr* | addr* )
 	INC2       LDA OVR ADD STH2kr INC2      STA  ( next x, add )
 	               half8s  STH2kr           STAk ( cur x, write )
 	#0001 SUB2 LDA ADD     STH2r #0001 SUB2 STA  ( prev x, add )
+	( Mendl )
 
-	STHr #01 SFT ( b-cor-half )
-	OVR #03 MUL .color0-7/b ADD LDZ ( b-printed-half )
-	SUB ( b-deltas )
+	( LIT "B Mcout )
+	( r-cor4 g-cor4 b-cor4 col | b-cor7 )
+	STHr #01 SFT ( ... col b-cor-half7 )
+	( LIT "C Mdebug-byte )
+	OVR #03 MUL .color0/b ADD LDZ #02 SFT ( b-print-half7 )
+	( LIT "P Mdebug-byte )
+	SUB ( b-delta-halfS )
+	( LIT "D Mcout DUP print-sbyte )
 	;dither-buffer/b .Screen/x DEI2 ADD2 STH2k
-	( b-deltas addr* )
+	( b-delta-halfS addr* | addr* )
 	INC2       LDA OVR ADD STH2kr INC2      STA  ( next x, add )
 	               half8s  STH2kr           STAk ( cur x, write )
 	#0001 SUB2 LDA ADD     STH2r #0001 SUB2 STA  ( prev x, add )
+	( Mendl )
+
 	.Screen/pixel DEO
+
+	( Mendl )
 	POP2 POP
 
 	advance-screen-pos POP
@@ -1469,7 +1502,10 @@
 @advance-screen-pos ( -- new-line )
 	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
 		#0000 .Screen/x DEO2 
-		.Screen/y DEI2 INC2
+		.Screen/y DEI2 
+		( LIT "Y Mdebug-short Mendl )
+		( DUP2 #0003 EQU2 ?done )
+		INC2
 		DUP2 .Screen/y DEO2
 		.img-h LDZ2 NEQ2 ?{ 
 			LIT ") Mcout Mendl
@@ -1493,6 +1529,7 @@
 
 @done ( -- )
 	( #80 .System/state DEO BRK )
+	#0000 .Screen/vector DEO2
 	;str/end print-str
 	BRK
 
@@ -1556,21 +1593,55 @@
 	JMP2r
 
 
-@add8+8s-clamp ( b bs -- b )
+( first operand must be positive, between #00 and #7f )
+( result between #00 and #7f )
+@add8s-clamp-pos ( b bs -- b )
 	DUP #80 AND ?{
 		( pos + pos )
-		OVR ADD 
-		GTHk ?{ NIP JMP2r }
+		ADD
+		DUP #80 AND ?{
+			JMP2r
+		} 
 		( overflow )
-		POP2 #ff 
+		POP #7f JMP2r
+	}
+	( pos + neg )
+	ADD
+	DUP #80 AND ?{
+		JMP2r
+	} 
+	( underflow )
+	POP #00 JMP2r
+
+
+( result between #00 and #ff, no overflow or underflow )
+@add8s-clamp ( bs bs -- bs )
+	OVR #80 AND ?{
+		( pos + ? )
+		DUP #80 AND ?{
+			( pos + pos )
+			ADD
+			DUP #80 AND ?{
+				JMP2r
+			} 
+			( overflow )
+			POP #7f JMP2r
+		}
+		( neg + pos )
+		ADD JMP2r
+	}
+	( ? + neg )
+	OVR #80 AND ?{
+		( neg + neg )
+		ADD
+		DUP #80 AND ?{
+			( underflow )
+			POP #80 JMP2r
+		}
 		JMP2r
 	}
 	( pos + neg )
-	OVR ADD
-	LTHk ?{ NIP JMP2r }
-	( underflow )
-	POP2 #00
-	JMP2r
+	ADD JMP2r
 
 
 @half8s ( sb -- sb )
@@ -1610,7 +1681,10 @@
 @palettes [
 	&bw    [ 00 00 00  ff ff ff  55 55 55  aa aa aa ]
 	&color [ 00 00 00  aa ee ff  ee ff 00  ff 00 00 ]
-	( &rgbw  [ 00 00 ff  ff ff ff  00 ff 00  ff 00 00 ] )
+	&debug [ 00 00 00  ff ff 00  00 ff 00  ff 00 00 ]
+	&bwrg  [ 00 00 00  ff ff ff  00 ff 00  ff 00 00 ]
+	&bwrb  [ 00 00 00  ff ff ff  00 00 ff  ff 00 00 ]
+	&bwbg  [ 00 00 00  ff ff ff  00 00 ff  00 ff 00 ]
 	&darkb [ 00 00 88  ff ff ff  00 ff 00  ff 00 00 ]
 	&detected-from-img ( special palette )
 ]
