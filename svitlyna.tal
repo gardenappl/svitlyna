@@ -44,6 +44,8 @@
 @color1 [ &r $1 &g $1 &b $1 ]
 @color2 [ &r $1 &g $1 &b $1 ]
 @color3 [ &r $1 &g $1 &b $1 ]
+@color-min [ &r $1 &g $1 &b $1 ]
+@color-max [ &r $1 &g $1 &b $1 ]
 
 %Mfile-buffer-length { #4000 }
 
@@ -655,6 +657,80 @@
 	.color3/b LDZ linear-to-srgb-single #04 SFT ORA
 	LIT "B Mdebug-short Mendl
 	.System/b DEO2
+
+	( get minimum and maximum colors )
+	.color3/r LDZ [ LITr -color2/r ]
+	&get-min-r ( min-r | {zaddr} )
+		STHkr LDZ
+		LTHk ?{ SWP } POP
+		STHkr .color0/r EQU ?&get-min-r-end
+		[ LITr 03 ] SUBr
+		!&get-min-r
+	&get-min-r-end
+	POPr
+	LIT "r Mdebug-byte Mendl
+	.color-min/r STZ
+
+	.color3/g LDZ [ LITr -color2/g ]
+	&get-min-g ( min-g | {zaddr} )
+		STHkr LDZ
+		LTHk ?{ SWP } POP
+		STHkr .color0/g EQU ?&get-min-g-end
+		[ LITr 03 ] SUBr
+		!&get-min-g
+	&get-min-g-end
+	POPr
+	LIT "g Mdebug-byte Mendl
+	.color-min/g STZ
+
+	.color3/b LDZ [ LITr -color2/b ]
+	&get-min-b ( min-b | {zaddr} )
+		STHkr LDZ
+		LTHk ?{ SWP } POP
+		STHkr .color0/b EQU ?&get-min-b-end
+		[ LITr 03 ] SUBr
+		!&get-min-b
+	&get-min-b-end
+	POPr
+	LIT "b Mdebug-byte Mendl
+	.color-min/b STZ
+
+	.color3/r LDZ [ LITr -color2/r ]
+	&get-max-r ( max-r | {zaddr} )
+		STHkr LDZ
+		GTHk ?{ SWP } POP
+		STHkr .color0/r EQU ?&get-max-r-end
+		[ LITr 03 ] SUBr
+		!&get-max-r
+	&get-max-r-end
+	POPr
+	LIT "R Mdebug-byte Mendl
+	.color-max/r STZ
+
+	.color3/g LDZ [ LITr -color2/g ]
+	&get-max-g ( max-g | {zaddr} )
+		STHkr LDZ
+		GTHk ?{ SWP } POP
+		STHkr .color0/g EQU ?&get-max-g-end
+		[ LITr 03 ] SUBr
+		!&get-max-g
+	&get-max-g-end
+	POPr
+	LIT "G Mdebug-byte Mendl
+	.color-max/g STZ
+
+	.color3/b LDZ [ LITr -color2/b ]
+	&get-max-b ( max-b | {zaddr} )
+		STHkr LDZ
+		GTHk ?{ SWP } POP
+		STHkr .color0/b EQU ?&get-max-b-end
+		[ LITr 03 ] SUBr
+		!&get-max-b
+	&get-max-b-end
+	POPr
+	LIT "B Mdebug-byte Mendl
+	.color-max/b STZ
+
 	JMP2r
 
 
@@ -734,7 +810,7 @@
 
 
 @part-debug ( part -- )
-	POP JMP2r
+	( POP JMP2r )
 
 	#00 OVR Mpart-size MUL2 STH2
 	( { "part 20 00 } STH2r print-str DUP print-byte Mcout )
@@ -1013,7 +1089,7 @@
 	( iterate until sum is half of all values )
 	&loop ( buffer* sumh* suml* ptr* )
 		STH2k Mload32
-		add32lol
+		add32
 		OVR2 OVR2
 		[ LIT2 &halfh $2 ] [ LIT2 &halfl $2 ] lt32 ?{ 
 			( reached half -> found median )
@@ -1289,7 +1365,7 @@
 	( fallthrough )
 
 
-@sum-colors-init ( -- )
+@last-palette-split-init ( -- )
 	#00 part-init
 	#01 part-init
 	#02 part-init
@@ -1312,7 +1388,7 @@
 		SWP2 STH2
 		LDA2k SWP2 INC2 INC2 LDA2 ( load 32-bit count )
 		#0000 STH2kr mul32 ( multiply by index )
-		add32lol
+		add32
 		STH2r INC2
 		DUP2 #00 Mpart-max-color INC NEQ2 ?{
 			POP2 POP2r
@@ -1415,6 +1491,32 @@
 
 	Mmode-no-dithering is-mode ?{
 		;display-dither set-on-pixel-received
+
+		#0000
+		&clear-buf
+			#0000 OVR2 ;dither-buffer/r ADD2 STA2
+			#0000 OVR2 ;dither-buffer/g ADD2 STA2
+			#0000 OVR2 ;dither-buffer/b ADD2 STA2
+			INC2 INC2
+			DUP2 .img-w LDZ2 LTH2
+		?&clear-buf
+		POP2
+		.color-min/r LDZ2 ( min-r min-g )
+		#01 SFT ;display-dither/min-g7 STA
+		#01 SFT ;display-dither/min-r7 STA
+		.color-min/b LDZ2 ( min-b max-r )
+		LIT "M Mcout Mendl
+		#01 SFT 
+		LIT "R Mdebug-byte Mendl
+		;display-dither/max-r7 STA
+		#01 SFT ;display-dither/min-b7 STA
+		.color-max/g LDZ2 ( max-g max-b )
+		OVR #01 SFT LIT "G Mdebug-byte Mendl POP
+		#01 SFT 
+		LIT "B Mdebug-byte Mendl
+		;display-dither/max-b7 STA
+		#01 SFT ;display-dither/max-g7 STA
+
 		!&display-func-set
 	}
 	;display set-on-pixel-received
@@ -1429,15 +1531,6 @@
 	#0000 .Screen/x DEO2
 	#0000 .Screen/y DEO2
 
-	#0000
-	&clear-buf
-		#0000 OVR2 ;dither-buffer/r ADD2 STA2
-		#0000 OVR2 ;dither-buffer/g ADD2 STA2
-		#0000 OVR2 ;dither-buffer/b ADD2 STA2
-		INC2 INC2
-		DUP2 .img-w LDZ2 LTH2
-	?&clear-buf
-	POP2
 	
 	.current-palette LDZ2 ;palettes/detected-from-img EQU2 
 	Mmode-partition-color-func is-mode AND ?{
@@ -1468,33 +1561,33 @@
 @display-dither ( r8 g8 b8 :- )
 	[ LITr -Screen/x ] DEI2r
 
-	STH2kr #0000 NEQ2 ?{ LIT "( Mcout }
-	STH2kr #0005 GTH2 ?{ LIT "? Mdebug-rgb }
-	STH2kr #0006 NEQ2 ?{ LIT ") Mcout Mendl }
+	( STH2kr #0000 NEQ2 ?{ LIT "( Mcout } )
+	( STH2kr #0005 GTH2 ?{ LIT "? Mdebug-rgb } )
+	( STH2kr #0006 NEQ2 ?{ LIT ") Mcout Mendl } )
 
 	ROT #01 SFT
 	;dither-buffer/r STH2kr ADD2 LDA
-	STH2kr #0005 GTH2 ?{ LIT "r Mdebug-byte }
-	add8s-clamp-pos
+	( STH2kr #0005 GTH2 ?{ LIT "r Mdebug-byte } )
+	[ LIT2 &min-r7 $1 &max-r7 $1 ] 8+8s-clamp
 
 	( g8 b8 r7-cor | x* )
 	ROT #01 SFT
 	;dither-buffer/g STH2kr ADD2 LDA 
-	STH2kr #0005 GTH2 ?{ LIT "g Mdebug-byte }
-	add8s-clamp-pos
+	( STH2kr #0005 GTH2 ?{ LIT "g Mdebug-byte } )
+	[ LIT2 &min-g7 $1 &max-g7 $1 ] 8+8s-clamp
 
 	( b8 r7-cor g7-cor | x* )
 	ROT #01 SFT
 	;dither-buffer/b STH2kr ADD2 LDA
-	STH2kr #0005 GTH2 ?{ LIT "b Mdebug-byte }
-	add8s-clamp-pos
+	( STH2kr #0005 GTH2 ?{ LIT "b Mdebug-byte } )
+	[ LIT2 &min-b7 $1 &max-b7 $1 ] 8+8s-clamp
 
 	( r7-cor g7-cor b7-cor | x* )
-	STH2kr #0005 GTH2 ?{ 
-		LIT "= Mdebug-byte 
-		DUP OVR2 ROT #10 rgb-sft Mprint-rgb 
-		Mendl 
-	}
+	( STH2kr #0005 GTH2 ?{  )
+	( 	LIT "= Mdebug-byte  )
+	( 	DUP OVR2 ROT #10 rgb-sft Mprint-rgb  )
+	( 	Mendl  )
+	( } )
 	[ LIT2 &get-color-func $2 ] JSR2
 
 	( r7-cor g7-cor b7-cor col | x* )
@@ -1613,6 +1706,8 @@
 	( #80 .System/state DEO BRK )
 	#0000 .Screen/vector DEO2
 	;str/end print-str
+	;8+8s-clamp/debug-h LDA2 ;8+8s-clamp/debug-l LDA2 LIT "O Mdebug32
+	#0000 DUP2 ;8+8s-clamp/debug-h STA2 ;8+8s-clamp/debug-l STA2
 	BRK
 
 
@@ -1668,29 +1763,38 @@
 	DUP2 INC2 INC2 LDA2 INC2 ( inc lower short )
 	DUP2 Mnon-zero2 ?{
 		POP2 LDA2k INC2 OVR2 STA2 ( inc upper short )
-		#0000 SWP2 INC2 INC2 STA2 
-		JMP2r 
+		#0000
 	}
 	SWP2 INC2 INC2 STA2	
 	JMP2r
 
 
-( first operand must be positive, between #00 and #7f )
-( result between #00 and #7f )
-@add8s-clamp-pos ( b bs -- b )
+( first operand, min and max must be positive, between #00 and #7f )
+( second operand can be negative )
+( result will be between min and max )
+@8+8s-clamp ( as bs min max -- clamp(a+b,min,max) )
+	( POP2 LIT2 [ 00 7f ] )
+	STH2 ( a bs | min max )
+
 	ADDk
 	#80 AND ?{
+		( no overflow or underflow )
 		ADD
+		STHr LTHk ?{ 
+			;&debug-h inc32-addr
+		SWP } POP ( less than max? )
+		STHr GTHk ?{ SWP } POP ( more than min? )
 		JMP2r
 	}
 	( overflow or underflow )
 	NIP
 	#80 AND ?{
 		( bs is positive )
-		#7f JMP2r
+		STHr POPr JMP2r
 	}
 	( bs is negative )
-	#00 JMP2r
+	POPr STHr JMP2r
+	[ &debug-h $2 &debug-l $2 ]
 
 
 @half8s ( sb -- sb )
@@ -1777,7 +1881,7 @@
     ROT2 NEQ2 STH NEQ2 STHr ORA JMP2r
 
 ( x + y )
-@add32lol ( xhi* xlo* yhi* ylo* -> zhi* zlo* )
+@add32 ( xhi* xlo* yhi* ylo* -> zhi* zlo* )
     ROT2 STH2k ADD2 STH2k ROT2 ROT2 GTH2r #00 STHr ADD2 ADD2 SWP2 JMP2r
 
 ( x - y )
@@ -1805,7 +1909,7 @@
     ( add z and a<<8 )
     #00 LIT2 [ &z1 $1 &z2 $1 ] LIT [ &z3 $1 ]
     LIT2 [ &w0 $1 &w1 $1 ] LIT [ &w2 $1 ] #00
-    !add32lol
+    !add32
 
 ( x * y )
 @mul32 ( x** y** -> z** )
@@ -1917,7 +2021,7 @@
         sub32 ,&rem1 STR2 ,&rem0 STR2       ( ; rem<-rem-div** )
         LIT2 [ &quo0 $2 ] LIT2 [ &quo1 $2 ] ( quo** )
         LIT2 [ &cur0 $2 ] LIT2 [ &cur1 $2 ] ( quo** cur** )
-        add32lol ,&quo1 STR2 ,&quo0 STR2       ( ; quo<-quo+cur** )
+        add32 ,&quo1 STR2 ,&quo0 STR2       ( ; quo<-quo+cur** )
       }
       ,&div0 LDR2 ,&div1 LDR2 #01 rshift32 ( div>>1** )
       ,&div1 STR2 ,&div0 STR2              ( ; div<-div>>1 )
