@@ -91,6 +91,84 @@
 |0100
 ( init )
 	( memory check )
+	;palettes/color .current-palette STZ2
+	prepare-palette-builtin
+
+	;ext-uxn38-fg-color #02 DEO2
+	( ;ext-uxn38-fg-color/v LDA ?{ !fail } )
+
+	{ fc fc fc fc fc fc 00 00
+	  00 00 3f 3f 3f 3f 3f 3f }
+	[ LITr -Screen/addr ] DEO2r
+	#0020 .Screen/y DEO2
+	#0010 .Screen/x DEO2
+	#c0 .Screen/sprite DEO
+	#0020 .Screen/x DEO2
+	#c1 .Screen/sprite DEO
+	#0030 .Screen/x DEO2
+	#c2 .Screen/sprite DEO
+	#0040 .Screen/x DEO2
+	#c3 .Screen/sprite DEO
+	#0050 .Screen/x DEO2
+	#c4 .Screen/sprite DEO
+	#0060 .Screen/x DEO2
+	#c5 .Screen/sprite DEO
+	#0070 .Screen/x DEO2
+	#c6 .Screen/sprite DEO
+	#0080 .Screen/x DEO2
+	#c7 .Screen/sprite DEO
+	#0090 .Screen/x DEO2
+	#c8 .Screen/sprite DEO
+	#00a0 .Screen/x DEO2
+	#c9 .Screen/sprite DEO
+	#00b0 .Screen/x DEO2
+	#ca .Screen/sprite DEO
+	#00c0 .Screen/x DEO2
+	#cb .Screen/sprite DEO
+	#00d0 .Screen/x DEO2
+	#cc .Screen/sprite DEO
+	#00e0 .Screen/x DEO2
+	#cd .Screen/sprite DEO
+	#00f0 .Screen/x DEO2
+	#ce .Screen/sprite DEO
+	#0100 .Screen/x DEO2
+	#cf .Screen/sprite DEO
+
+	#0040 .Screen/y DEO2
+	#0010 .Screen/x DEO2
+	#80 .Screen/sprite DEO
+	#0020 .Screen/x DEO2
+	#81 .Screen/sprite DEO
+	#0030 .Screen/x DEO2
+	#82 .Screen/sprite DEO
+	#0040 .Screen/x DEO2
+	#83 .Screen/sprite DEO
+	#0050 .Screen/x DEO2
+	#84 .Screen/sprite DEO
+	#0060 .Screen/x DEO2
+	#85 .Screen/sprite DEO
+	#0070 .Screen/x DEO2
+	#86 .Screen/sprite DEO
+	#0080 .Screen/x DEO2
+	#87 .Screen/sprite DEO
+	#0090 .Screen/x DEO2
+	#88 .Screen/sprite DEO
+	#00a0 .Screen/x DEO2
+	#89 .Screen/sprite DEO
+	#00b0 .Screen/x DEO2
+	#8a .Screen/sprite DEO
+	#00c0 .Screen/x DEO2
+	#8b .Screen/sprite DEO
+	#00d0 .Screen/x DEO2
+	#8c .Screen/sprite DEO
+	#00e0 .Screen/x DEO2
+	#8d .Screen/sprite DEO
+	#00f0 .Screen/x DEO2
+	#8e .Screen/sprite DEO
+	#0100 .Screen/x DEO2
+	#8f .Screen/sprite DEO
+	BRK
+
 	;str/memory-check print-str
 	;end Mprint-short
 	#1234 ;end STA2
@@ -117,6 +195,57 @@
 	}
 	;read-argument .Console/vector DEO2
 	BRK
+
+( Excerpt from uxn11 documentation: 
+  This describes the nonstandard "03 extensions" command )
+
+( The parts of the command are:
+
+* Command code: Always 0x03.
+
+* Device number: A command that does not load or override a device into a
+device slot is zero, otherwise it is a nonzero multiple of sixteen. Some
+extensions and some implementations may have further restrictions. If this
+number is not a multiple of sixteen (but must be at least sixteen), then
+the low nybble indicates how many additional consecutive devices to be
+affected; e.g. #33 means to affect all four audio devices (the high nybble
+is 3 for the first audio device, and the low nybble 3 means the other 3).
+
+* UUID: Sixteen bytes, which identifies the extension.
+
+* Version: One byte. The emulator writes a nonzero value here (the specific
+value is defined by the extension) if it is supported in this mode with
+this device number and other parameters, or zero if it is not implemented.
+(The uxn program should put zero here by default, so that if running on an
+emulator that doesn't process the 03 command at all, it will work.)
+
+* Extra data: The number of bytes and meaning is defined by the specific
+extension; this may be read-only, write-only, or some combination. If the
+extension is not implemented, then the emulator MUST ignore it and MUST NOT
+attempt to write anything here, and MUST NOT override any devices.
+
+An example of how to use this:
+
+  @load-ext1 ;ext1 #02 DEO2 ;ext1/v LDA JMP2r
+  @ext1 03 d0 <uuid> &v 00
+
+This example does not use any extra data, and selects an extension for
+device #d0. The <uuid> must be replaced by the appropriate sixteen-byte
+UUID for the extension being selected. )
+
+( Allows setting separate foreground and background colours. The device
+number must be zero, and the version will be 1. The data is eight 16-bit
+numbers, for the colours in order background 0 to 3 and then foreground 0
+to 3 (although note that foreground 0 is not normally meaningful), with the
+high to low nybble of each being red, green, blue, unused (zero). What
+happens if you then try to change colours using the colour ports after
+doing this, is not specified. )
+@ext-uxn38-fg-color [ 
+	03 00 
+	8017 5132 e263 11ed b8c9 0026 1874 5416 
+	&v 00 
+	f000 0f00 00f0 fff0 0ff0 f0f0 ff00 0000
+]
 
 
 @read-stdin ( -> )
@@ -1706,8 +1835,6 @@
 	( #80 .System/state DEO BRK )
 	#0000 .Screen/vector DEO2
 	;str/end print-str
-	;8+8s-clamp/debug-h LDA2 ;8+8s-clamp/debug-l LDA2 LIT "O Mdebug32
-	#0000 DUP2 ;8+8s-clamp/debug-h STA2 ;8+8s-clamp/debug-l STA2
 	BRK
 
 
@@ -1780,9 +1907,7 @@
 	#80 AND ?{
 		( no overflow or underflow )
 		ADD
-		STHr LTHk ?{ 
-			;&debug-h inc32-addr
-		SWP } POP ( less than max? )
+		STHr LTHk ?{ SWP } POP ( less than max? )
 		STHr GTHk ?{ SWP } POP ( more than min? )
 		JMP2r
 	}
