@@ -1,5 +1,6 @@
 I'm not much of an artist or a photographer, so here are some Creative Commons-licensed assets.
 
+(Note: `svitlyna` often gets minor tweaks, so the images here may not be 100% identical to results in the current version.)
 
 # Autumn landscape 
 

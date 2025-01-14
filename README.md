@@ -11,6 +11,8 @@ Note that the Varvara computer specification only supports a palette of 4 colors
 ## Features
 * [QOI](qoi.txt) file format support
 * [Farbfeld](https://tools.suckless.org/farbfeld/) image format support
+* 4 colors!
+  * 7 colors, if [uxn38](http://zzo38computer.org/fossil/uxn.ui) is used with the foreground color extension
 * Current size limit is **4096 pixels maximum width**
 * **Color quantization** using the median-cut algorithm
   * Choice of preset color palettes in addition to the algorithm above
@@ -20,8 +22,8 @@ Note that the Varvara computer specification only supports a palette of 4 colors
 ## Usage
 There is currently no friendly graphical UI. There is also no file picker from within the program.
 
-To display an image, provide a filename as an argument through the command-line:
-```
+To display an image, provide a filename as an argument through the command-line. For example, using the `uxn11` emulator:
+```sh
 uxn11 svitlyna.rom image.ff
 ```
 
@@ -30,6 +32,11 @@ Press [UP] or [DOWN] to browse color palettes.
 Press [A], aka Ctrl on desktop keyboard, to automatically pick a color palette based on the image, but note that this is currently slow. 
 
 Press [B] aka Alt to switch render modes. You can enable or disable dithering this way. For the auto-color mode, there are extra modes with slightly different rendering.
+
+A special 7-color mode is available for uxn38, however this requires the "nonstandard features" flag (and also the read-only file access flag):
+```sh
+uxn38 -x -y svitlyna.rom image.qoi
+```
 
 ## To-do / ideas
 
@@ -42,7 +49,6 @@ Press [B] aka Alt to switch render modes. You can enable or disable dithering th
   * Magic wand tool: click on 4 points of the image to say "these are the colors I want"
 * Export to TGA, CHR, theme files
   * this could make this genuinely useful within the Uxn ecosystem rather than just a toy
-* Other color picking algorithms: popularity sort?
 * Other color picking algorithms, see below
 
 ## Some notes on color
