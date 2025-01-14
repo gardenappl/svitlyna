@@ -10,7 +10,7 @@
 |20 @Screen [ 
 	&vector $2 &width $2 &height $2 &auto $1
 	$1 
-	&x $2 &y $2 &addr $2 &pixel $1 &sprite $1
+	&x $1 &x-l $1 &y $1 &y-l $1 &addr $2 &pixel $1 &sprite $1
 ]
 |80 @Controller [
 	&vector $2 &button $1 &key $1
@@ -44,8 +44,24 @@
 @color1 [ &r $1 &g $1 &b $1 ]
 @color2 [ &r $1 &g $1 &b $1 ]
 @color3 [ &r $1 &g $1 &b $1 ]
+( extra 4 colors, only used with uxn38 )
+@color4 [ &r $1 &g $1 &b $1 ]
+@color5 [ &r $1 &g $1 &b $1 ]
+@color6 [ &r $1 &g $1 &b $1 ]
+@color7 [ &r $1 &g $1 &b $1 ]
 @color-min [ &r $1 &g $1 &b $1 ]
 @color-max [ &r $1 &g $1 &b $1 ]
+
+( based on @palettes/kwgb )
+( k w g b (m=unused) r c y )
+%Muxn38-r { #05 }
+%Muxn38-g { #02 }
+%Muxn38-b { #03 }
+%Muxn38-w { #01 }
+%Muxn38-c { #06 }
+%Muxn38-m { #04 }
+%Muxn38-y { #07 }
+%Muxn38-k { #00 }
 
 %Mfile-buffer-length { #4000 }
 
@@ -56,6 +72,7 @@
 %Mmode-streaming { #01 }
 %Mmode-no-dithering { #02 }
 %Mmode-partition-color-func { #04 }
+@mode-uxn38 $1
 
 %Mcout { .Console/write DEO }
 %Mendl { #0a Mcout }
@@ -91,84 +108,6 @@
 |0100
 ( init )
 	( memory check )
-	;palettes/color .current-palette STZ2
-	prepare-palette-builtin
-
-	;ext-uxn38-fg-color #02 DEO2
-	( ;ext-uxn38-fg-color/v LDA ?{ !fail } )
-
-	{ fc fc fc fc fc fc 00 00
-	  00 00 3f 3f 3f 3f 3f 3f }
-	[ LITr -Screen/addr ] DEO2r
-	#0020 .Screen/y DEO2
-	#0010 .Screen/x DEO2
-	#c0 .Screen/sprite DEO
-	#0020 .Screen/x DEO2
-	#c1 .Screen/sprite DEO
-	#0030 .Screen/x DEO2
-	#c2 .Screen/sprite DEO
-	#0040 .Screen/x DEO2
-	#c3 .Screen/sprite DEO
-	#0050 .Screen/x DEO2
-	#c4 .Screen/sprite DEO
-	#0060 .Screen/x DEO2
-	#c5 .Screen/sprite DEO
-	#0070 .Screen/x DEO2
-	#c6 .Screen/sprite DEO
-	#0080 .Screen/x DEO2
-	#c7 .Screen/sprite DEO
-	#0090 .Screen/x DEO2
-	#c8 .Screen/sprite DEO
-	#00a0 .Screen/x DEO2
-	#c9 .Screen/sprite DEO
-	#00b0 .Screen/x DEO2
-	#ca .Screen/sprite DEO
-	#00c0 .Screen/x DEO2
-	#cb .Screen/sprite DEO
-	#00d0 .Screen/x DEO2
-	#cc .Screen/sprite DEO
-	#00e0 .Screen/x DEO2
-	#cd .Screen/sprite DEO
-	#00f0 .Screen/x DEO2
-	#ce .Screen/sprite DEO
-	#0100 .Screen/x DEO2
-	#cf .Screen/sprite DEO
-
-	#0040 .Screen/y DEO2
-	#0010 .Screen/x DEO2
-	#80 .Screen/sprite DEO
-	#0020 .Screen/x DEO2
-	#81 .Screen/sprite DEO
-	#0030 .Screen/x DEO2
-	#82 .Screen/sprite DEO
-	#0040 .Screen/x DEO2
-	#83 .Screen/sprite DEO
-	#0050 .Screen/x DEO2
-	#84 .Screen/sprite DEO
-	#0060 .Screen/x DEO2
-	#85 .Screen/sprite DEO
-	#0070 .Screen/x DEO2
-	#86 .Screen/sprite DEO
-	#0080 .Screen/x DEO2
-	#87 .Screen/sprite DEO
-	#0090 .Screen/x DEO2
-	#88 .Screen/sprite DEO
-	#00a0 .Screen/x DEO2
-	#89 .Screen/sprite DEO
-	#00b0 .Screen/x DEO2
-	#8a .Screen/sprite DEO
-	#00c0 .Screen/x DEO2
-	#8b .Screen/sprite DEO
-	#00d0 .Screen/x DEO2
-	#8c .Screen/sprite DEO
-	#00e0 .Screen/x DEO2
-	#8d .Screen/sprite DEO
-	#00f0 .Screen/x DEO2
-	#8e .Screen/sprite DEO
-	#0100 .Screen/x DEO2
-	#8f .Screen/sprite DEO
-	BRK
-
 	;str/memory-check print-str
 	;end Mprint-short
 	#1234 ;end STA2
@@ -180,10 +119,21 @@
 	;on-controller-input .Controller/vector DEO2
 	( ;on-mouse .Mouse/vector DEO2 )
 
+	;ext-uxn38-fg-color .System/expansion DEO2
+	;ext-uxn38-fg-color/v LDA 
+	DUP #02 LTH ?{ ;str/unexpected-ext !fail-str }
+	.mode-uxn38 STZ
+
 	.Console/type DEI ?{ 
 		;read-stdin .Console/vector DEO2	
-		;palettes/color .current-palette STZ2
-		prepare-palette-builtin
+		.mode-uxn38 LDZ ?{
+			;palettes/color .current-palette STZ2
+			prepare-palette-builtin
+			!&palette-chosen
+		}
+		;palettes/kwgb .current-palette STZ2
+		prepare-palette-uxn38
+		&palette-chosen
 		Mmode-streaming .current-mode STZ
 		;str/read print-str ;str/read-stdin print-str
 
@@ -195,6 +145,7 @@
 	}
 	;read-argument .Console/vector DEO2
 	BRK
+	
 
 ( Excerpt from uxn11 documentation: 
   This describes the nonstandard "03 extensions" command )
@@ -244,7 +195,8 @@ doing this, is not specified. )
 	03 00 
 	8017 5132 e263 11ed b8c9 0026 1874 5416 
 	&v 00 
-	f000 0f00 00f0 fff0 0ff0 f0f0 ff00 0000
+	( k w g b (m=unused) r c y )
+	0000 fff0 0f00 00f0 f0f0 f000 0ff0 ff00
 ]
 
 
@@ -271,12 +223,13 @@ doing this, is not specified. )
 		#00 [ ,&name-length LDR2 ] ;filename ADD2 STA
 		Mendl
 		
-		LIT2 00 -part-split-step STZ
-		( ;palettes/bw .current-palette STZ2 )
-		( prepare-palette-builtin )
-		( !display-init )
-		;palettes/detected-from-img .current-palette STZ2
-		!palette-split-init
+		.mode-uxn38 LDZ ?{
+			;palettes/detected-from-img .current-palette STZ2
+			!palette-split-init
+		}
+		;palettes/kwgb .current-palette STZ2
+		prepare-palette-uxn38
+		!display-init
 	}
 	.Console/read DEI 
 	[ ,&name-length LDR2 ] ;filename ADD2 STA
@@ -386,6 +339,7 @@ doing this, is not specified. )
 
 @on-a-ctrl ( -> )
 	Mmode-streaming is-mode ?end
+	[ LIT2 00 -mode-uxn38 ] STZ
 	;palettes/detected-from-img .current-palette STZ2
 
 	.part-split-step LDZ [ #03 ] EQU ?{
@@ -419,6 +373,15 @@ doing this, is not specified. )
 	Mmode-streaming is-mode ?end
 	.current-palette LDZ2 
 	#000c ADD2
+	DUP2 ;palettes/kwgb NEQ2 ?{
+		;ext-uxn38-fg-color/v LDA #01 NEQ ?{
+			[ LIT2 01 -mode-uxn38 ] STZ
+			.current-palette STZ2
+			prepare-palette-uxn38
+			!display-init
+		}
+	}
+	[ LIT2 00 -mode-uxn38 ] STZ
 	DUP2 ;palettes/detected-from-img LTH2 ?{
 		POP2 ;palettes
 	}
@@ -434,6 +397,15 @@ doing this, is not specified. )
 		POP2 ;palettes/detected-from-img
 	}
 	#000c SUB2
+	DUP2 ;palettes/kwgb NEQ2 ?{
+		;ext-uxn38-fg-color/v LDA #01 NEQ ?{
+			[ LIT2 01 -mode-uxn38 ] STZ
+			.current-palette STZ2
+			prepare-palette-uxn38
+			!display-init
+		}
+	}
+	[ LIT2 00 -mode-uxn38 ] STZ
 	.current-palette STZ2
 	prepare-palette-builtin
 	!display-init
@@ -753,7 +725,7 @@ doing this, is not specified. )
 	JMP2r
 
 
-@prepare-palette-builtin ( -- )
+@prepare-palette-colors-builtin ( -- )
 	.current-palette LDZ2 
 	          LDA2k .color0/g STZ .color0/r STZ
 	INC2 INC2 LDA2k .color1/r STZ .color0/b STZ
@@ -761,10 +733,15 @@ doing this, is not specified. )
 	INC2 INC2 LDA2k .color2/g STZ .color2/r STZ
 	INC2 INC2 LDA2k .color3/r STZ .color2/b STZ
 	INC2 INC2 LDA2  .color3/b STZ .color3/g STZ
+	JMP2r
+
+
+@prepare-palette-builtin ( -- )
+	prepare-palette-colors-builtin
 	( fallthrough )
 
 
-@prepare-palette ( -- )
+@prepare-palette-screen ( -- )
 	{ 20 "0123 0a 00 } STH2r print-str
 	.color0/r LDZ linear-to-srgb-single #f0 AND
 	.color1/r LDZ linear-to-srgb-single #04 SFT ORA
@@ -859,6 +836,38 @@ doing this, is not specified. )
 	POPr
 	LIT "B Mdebug-byte Mendl
 	.color-max/b STZ
+
+	JMP2r
+
+@prepare-palette-uxn38 ( -- )
+	;ext-uxn38-fg-color .System/expansion DEO2
+	;str/uxn38-color-ext print-str
+	prepare-palette-colors-builtin
+
+	( color4 = magenta(unused): #ff00ff )
+	LIT2 ff
+	     00 .color4/r STZ2 
+	LIT2 ff
+	( color5 = red: #ff0000 )
+	     ff .color4/b STZ2 
+	LIT2 00
+	     00 .color5/g STZ2
+	( color6 = cyan: #00ffff )
+	LIT2 00
+	     ff .color6/r STZ2
+	LIT2 ff
+	( color7 = yellow: #ffff00 )
+	     ff .color6/b STZ2
+	LIT2 ff
+	     00 .color7/g STZ2
+	( color-min: #000000 )
+	LIT2 00
+	     00 .color-min/r STZ2
+	LIT2 00
+	( color-max: #ffffff )
+	     ff .color-min/b STZ2
+	LIT2 ff
+	     ff .color-max/g STZ2
 
 	JMP2r
 
@@ -965,7 +974,7 @@ doing this, is not specified. )
 		DUP2 ;part/r-sort Msk+ ADD2 LDA2 Mprint-short
 		INC2 INC2 
 		DUP2 
-		DUP #40 SFT ?{ Mendl !&end-print-r }
+		DUP #30 SFT ?{ Mendl !&end-print-r }
 		#20 Mcout
 		&end-print-r
 		Mpart-sort-buffer-size NEQ2
@@ -981,7 +990,7 @@ doing this, is not specified. )
 		DUP2 ;part/g-sort Msk+ ADD2 LDA2 Mprint-short
 		INC2 INC2 
 		DUP2 
-		DUP #40 SFT ?{ Mendl !&end-print-g }
+		DUP #30 SFT ?{ Mendl !&end-print-g }
 		#20 Mcout
 		&end-print-g
 		Mpart-sort-buffer-size NEQ2
@@ -997,7 +1006,7 @@ doing this, is not specified. )
 		DUP2 ;part/b-sort Msk+ ADD2 LDA2 Mprint-short
 		INC2 INC2 
 		DUP2 
-		DUP #40 SFT ?{ Mendl !&end-print-b }
+		DUP #30 SFT ?{ Mendl !&end-print-b }
 		#20 Mcout
 		&end-print-b
 		Mpart-sort-buffer-size NEQ2
@@ -1223,33 +1232,31 @@ doing this, is not specified. )
 		[ LIT2 &halfh $2 ] [ LIT2 &halfl $2 ] lt32 ?{ 
 			( reached half -> found median )
 
+			( now decide which partition to insert into )
+			( if sum - current_val > count - sum
+			  then there are more items before current index 
+			  than after it )
+			( we try to keep partitions balanced )
+
+			( buffer* sumh* suml* | ptr* )
+			STH2 STH2
 			[ LIT2 &counth $2 ] [ LIT2 &countl $2 ]
-			neq32 ?{ !&skip-correction }
-			
-			( correction for when first half has
-			  too few colors )
-			( load current val again )
-			STH2kr Mload32 
-			[ ,&halfh LDR2 ] [ ,&halfl LDR2 ] #01 rshift32
+			STH2kr SWP2r STH2kr
+			( buffer* counth* countl* sumh* suml* | ptr* sumh* suml* )
+			sub32
+			SWP2r STH2r STH2r 
+			STH2kr Mload32
+			sub32
 			lt32 ?{
-				( current index contains more than
-				  1/4th of all pixels, therefore
-				  previous pixels had less than 1/4th,
-				  so add current index to them )
+				( increment ptr*, thus add current value 
+				  to first partition, which is smaller )
 				LIT "! Mcout
 				LIT "! Mcout
 				LIT "! Mcout
 				LIT "! Mcout
 				LIT "! Mcout
-				STH2r
-				SWP2 SUB2
-				#02 SFT2 NIP
-				( ...unless the current index is 
-				  the end of the partition )
-				INC
-				JMP2r
+				[ LIT2r 0004 ] ADD2r
 			}
-			&skip-correction
 			STH2r
 			SWP2 SUB2
 			#02 SFT2 NIP
@@ -1431,11 +1438,13 @@ doing this, is not specified. )
 		POP
 		.part-split-step LDZ INC
 		#00 SWP Mpart-size MUL2 STH2
+		LIT "~ Mdebug-byte
 		#00 SWP Mpart-size MUL2 STH2
 		( rst: dest-part-offset* src-part-offset* )
 
 		;part/r-end Msk+ LDA SWP2r ;part/r-end Msk+ STA SWP2r
 		;part/r-sort Msk+ ;part/count Msk+ part-get-median DUP 
+		LIT "r Mdebug-byte Mendl
 		;part/r-end Msk+ STA SWP2r ;part/r-beg Msk+ STA SWP2r
 
 		;part/g-beg Msk+ LDA SWP2r ;part/g-beg Msk+ STA SWP2r
@@ -1449,6 +1458,7 @@ doing this, is not specified. )
 		POP
 		.part-split-step LDZ INC
 		#00 SWP Mpart-size MUL2 STH2
+		LIT "~ Mdebug-byte
 		#00 SWP Mpart-size MUL2 STH2
 		( rst: dest-part-offset* src-part-offset* )
 
@@ -1457,6 +1467,7 @@ doing this, is not specified. )
 
 		;part/g-end Msk+ LDA SWP2r ;part/g-end Msk+ STA SWP2r
 		;part/g-sort Msk+ ;part/count Msk+ part-get-median DUP 
+		LIT "g Mdebug-byte Mendl
 		;part/g-end Msk+ STA SWP2r ;part/g-beg Msk+ STA SWP2r
 
 		;part/b-beg Msk+ LDA SWP2r ;part/b-beg Msk+ STA SWP2r
@@ -1466,6 +1477,7 @@ doing this, is not specified. )
 	POP
 	.part-split-step LDZ INC
 	#00 SWP Mpart-size MUL2 STH2
+	LIT "~ Mdebug-byte
 	#00 SWP Mpart-size MUL2 STH2
 	( rst: dest-part-offset* src-part-offset* )
 
@@ -1477,6 +1489,7 @@ doing this, is not specified. )
 
 	;part/b-end Msk+ LDA SWP2r ;part/b-end Msk+ STA SWP2r
 	;part/b-sort Msk+ ;part/count Msk+ part-get-median DUP 
+	LIT "b Mdebug-byte Mendl
 	;part/b-end Msk+ STA SWP2r ;part/b-beg Msk+ STA SWP2r
 
 	&split-done
@@ -1578,7 +1591,7 @@ doing this, is not specified. )
 	;avg-colors/color1b LDA Mpart-color-sft-ret SFT .color1/b STZ
 	;avg-colors/color2b LDA Mpart-color-sft-ret SFT .color2/b STZ
 	;avg-colors/color3b LDA Mpart-color-sft-ret SFT .color3/b STZ
-	!prepare-palette
+	!prepare-palette-screen
 
 
 
@@ -1660,25 +1673,32 @@ doing this, is not specified. )
 	#0000 .Screen/x DEO2
 	#0000 .Screen/y DEO2
 
-	
-	.current-palette LDZ2 ;palettes/detected-from-img EQU2 
-	Mmode-partition-color-func is-mode AND ?{
-		;pick-color ;display/get-color-func STA2
-		;pick-color ;display-dither/get-color-func STA2
+	;ext-uxn38-fg-color/v LDA #00 EQU ?{
+		( clear fg pixels )
+		[ LIT2 c0 -Screen/pixel ] DEO
+	}
+
+	.mode-uxn38 LDZ ?{
+		.current-palette LDZ2 ;palettes/detected-from-img EQU2 
+		Mmode-partition-color-func is-mode AND ?{
+			;pick-color ;display/get-color-func STA2
+			;pick-color ;display-dither/get-color-func STA2
+			BRK
+		}
+		;get-partition ;display/get-color-func STA2
+		;get-partition ;display-dither/get-color-func STA2
 		BRK
 	}
-	;get-partition ;display/get-color-func STA2
-	;get-partition ;display-dither/get-color-func STA2
+	;pick-color-uxn38 ;display/get-color-func STA2
+	;pick-color-uxn38 ;display-dither/get-color-func STA2
 	BRK
 
 
 @display ( r8 g8 b8 -- )
 	#01 rgb-sft
 	[ LIT2 &get-color-func $2 ] JSR2
-	.Screen/pixel DEO
-	POP2 POP
-	advance-screen-pos POP
-	JMP2r
+	NIP2 NIP
+	!draw-pixel
 
 
 ( sierra lite dithering )
@@ -1748,11 +1768,17 @@ doing this, is not specified. )
 	STH2kr INC2 LDA OVR ADD STH2kr INC2       STA  ( next, add 1/2 )
 	                half8s  STH2kr            STAk ( curr, set 1/4 )
 	#0001 SUB2  LDA ADD     STH2r  #0001 SUB2 STA  ( prev, add 1/4 )
+	( fallthrough )
 
+
+@draw-pixel ( col -- )
+	( convert color to pixel )
+	DUP #04 LTH ?{
+		( set color to foreground, reset #04 bit )
+		#40 ORA
+	}
 	.Screen/pixel DEO
-
-	advance-screen-pos POP
-	JMP2r
+	!advance-screen-pos
 
 
 ( chooses closest color from palette )
@@ -1796,9 +1822,60 @@ doing this, is not specified. )
 	JMP2r
 
 
+@pick-color-uxn38 ( r7 g7 b7 -- r7 g7 b7 col )
+	ROTk ( r7 g7 b7 g7 b7 r7 )
+	#40 LTH ?{
+		( red, magenta, yellow, white )
+		#40 LTH ?{
+			( magenta, white )
+			#40 LTH ?{
+				( white )
+				Muxn38-w 
+				JMP2r
+			}
+			( magenta(unused): alternate between red and blue )
+			[ LIT2 01 -Screen/x-l ] DEI .Screen/y-l DEI EOR AND ?{
+				Muxn38-r
+				JMP2r
+			}
+			Muxn38-b
+			JMP2r
+		}
+		( red, yellow )
+		#40 LTH ?{
+			( yellow )
+			Muxn38-y 
+			JMP2r
+		}
+		( red )
+		Muxn38-r 
+		JMP2r
+	}
+	( black, green, blue, cyan )
+	#40 LTH ?{
+		( blue, cyan )
+		#40 LTH ?{
+			( cyan )
+			Muxn38-c 
+			JMP2r
+		}
+		( blue )
+		Muxn38-b 
+		JMP2r
+	}
+	( black, green )
+	#40 LTH ?{
+		( green )
+		Muxn38-g 
+		JMP2r
+	}
+	( black )
+	Muxn38-k 
+	JMP2r
+
 
 ( assumes screen auto )
-@advance-screen-pos ( -- new-line )
+@advance-screen-pos ( -- )
 	.Screen/x DEI2 .img-w LDZ2 NEQ2 ?{
 		#0000 .Screen/x DEO2 
 		.Screen/y DEI2 
@@ -1811,13 +1888,13 @@ doing this, is not specified. )
 			POP2
 			( #0000 .Screen/y DEO2  )
 			( !stop-file-read )
-			#01 
+			( #01  )
 			JMP2r
 		}
-		#01 
+		( #01  )
 		JMP2r
 	}
-	#00
+	( #00 )
 	JMP2r
 
 @on-mouse ( -> )
@@ -1957,12 +2034,12 @@ doing this, is not specified. )
 
 ( on monochrome screens, colors 0 and 2 are black, 1 and 3 are white )
 @palettes [
+	&color [ 00 00 00  55 dd ff  99 ff 00  ff 00 00 ]
 	&bw    [ 00 00 00  ff ff ff  55 55 55  aa aa aa ]
 	&darkb [ 00 00 33  ff ff ff  00 ff 00  ff 00 00 ]
-	&bwrg  [ 00 00 00  ff ff ff  00 ff 00  ff 00 00 ]
-	&bwrb  [ 00 00 00  ff ff ff  00 00 ff  ff 00 00 ]
-	&bwbg  [ 00 00 00  ff ff ff  00 00 ff  00 ff 00 ]
-	&color [ 00 00 00  55 dd ff  99 ff 00  ff 00 00 ]
+	&kwrg  [ 00 00 00  ff ff ff  00 ff 00  ff 00 00 ]
+	&kwrb  [ 00 00 00  ff ff ff  00 00 ff  ff 00 00 ]
+	&kwgb  [ 00 00 00  ff ff ff  00 ff 00  00 00 ff ] ( used for uxn38 )
 	&detected-from-img ( special palette )
 ]
 
@@ -1984,6 +2061,8 @@ doing this, is not specified. )
 	&memory-check "RAM 20 "check 20 "at 20 00
 	&memory-error "Not 20 "enough 20 "RAM 0a 20 00
 	&part-too-small "Part 20 "too 20 "small 20 "to 20 "split 0a 00
+	&uxn38-color-ext "uxn38 20 "color 20 "ext.! 0a 00
+	&unexpected-ext "Bad 20 "ext. 20 "ver. 0a 00
 ]
 
 
@@ -2186,6 +2265,46 @@ doing this, is not specified. )
 ]
 
 @part3 [
+	( partition boundaries: start inclusive, end exclusive )
+	&r-beg 00 &r-end 00
+	&g-beg 00 &g-end 00
+	&b-beg 00 &b-end 00
+	( radix-sorted lists of color values )
+	&count $4
+	&r-sort $0200 &g-sort $0200 &b-sort $0200
+]
+
+@part4 [
+	( partition boundaries: start inclusive, end exclusive )
+	&r-beg 00 &r-end 00
+	&g-beg 00 &g-end 00
+	&b-beg 00 &b-end 00
+	( radix-sorted lists of color values )
+	&count $4
+	&r-sort $0200 &g-sort $0200 &b-sort $0200
+]
+
+@part5 [
+	( partition boundaries: start inclusive, end exclusive )
+	&r-beg 00 &r-end 00
+	&g-beg 00 &g-end 00
+	&b-beg 00 &b-end 00
+	( radix-sorted lists of color values )
+	&count $4
+	&r-sort $0200 &g-sort $0200 &b-sort $0200
+]
+
+@part6 [
+	( partition boundaries: start inclusive, end exclusive )
+	&r-beg 00 &r-end 00
+	&g-beg 00 &g-end 00
+	&b-beg 00 &b-end 00
+	( radix-sorted lists of color values )
+	&count $4
+	&r-sort $0200 &g-sort $0200 &b-sort $0200
+]
+
+@part7 [
 	( partition boundaries: start inclusive, end exclusive )
 	&r-beg 00 &r-end 00
 	&g-beg 00 &g-end 00
