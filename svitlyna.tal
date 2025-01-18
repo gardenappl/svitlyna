@@ -127,7 +127,7 @@
 	.Console/type DEI ?{ 
 		;read-stdin .Console/vector DEO2	
 		.mode-uxn38 LDZ ?{
-			;palettes/color .current-palette STZ2
+			;palettes/bw .current-palette STZ2
 			prepare-palette-builtin
 			!&palette-chosen
 		}
@@ -1710,33 +1710,21 @@ doing this, is not specified. )
 @display-dither ( r8 g8 b8 :- )
 	[ LITr -Screen/x ] DEI2r
 
-	( STH2kr #0000 NEQ2 ?{ LIT "( Mcout } )
-	( STH2kr #0005 GTH2 ?{ LIT "? Mdebug-rgb } )
-	( STH2kr #0006 NEQ2 ?{ LIT ") Mcout Mendl } )
-
 	ROT #01 SFT
 	;dither-buffer/r STH2kr ADD2 LDA
-	( STH2kr #0005 GTH2 ?{ LIT "r Mdebug-byte } )
 	[ LIT2 &min-r7 $1 &max-r7 $1 ] 8+8s-clamp
 
 	( g8 b8 r7-cor | x* )
 	ROT #01 SFT
 	;dither-buffer/g STH2kr ADD2 LDA 
-	( STH2kr #0005 GTH2 ?{ LIT "g Mdebug-byte } )
 	[ LIT2 &min-g7 $1 &max-g7 $1 ] 8+8s-clamp
 
 	( b8 r7-cor g7-cor | x* )
 	ROT #01 SFT
 	;dither-buffer/b STH2kr ADD2 LDA
-	( STH2kr #0005 GTH2 ?{ LIT "b Mdebug-byte } )
 	[ LIT2 &min-b7 $1 &max-b7 $1 ] 8+8s-clamp
 
 	( r7-cor g7-cor b7-cor | x* )
-	( STH2kr #0005 GTH2 ?{  )
-	( 	LIT "= Mdebug-byte  )
-	( 	DUP OVR2 ROT #10 rgb-sft Mprint-rgb  )
-	( 	Mendl  )
-	( } )
 	[ LIT2 &get-color-func $2 ] JSR2
 
 	( r7-cor g7-cor b7-cor col | x* )
@@ -1840,6 +1828,13 @@ doing this, is not specified. )
 			}
 			Muxn38-b
 			JMP2r
+			( ROTk ROT POP )
+			( GTH ?{ )
+			( 	Muxn38-r )
+			( 	JMP2r )
+			( } )
+			( Muxn38-b )
+			( JMP2r )
 		}
 		( red, yellow )
 		#40 LTH ?{
@@ -1884,17 +1879,13 @@ doing this, is not specified. )
 		INC2
 		DUP2 .Screen/y DEO2
 		.img-h LDZ2 NEQ2 ?{ 
-			LIT ") Mcout Mendl
-			POP2
-			( #0000 .Screen/y DEO2  )
-			( !stop-file-read )
-			( #01  )
-			JMP2r
+			Mmode-streaming is-mode ?{
+				JMP2r
+			}
+			!done
 		}
-		( #01  )
 		JMP2r
 	}
-	( #00 )
 	JMP2r
 
 @on-mouse ( -> )
@@ -2315,8 +2306,7 @@ doing this, is not specified. )
 ]
 
 @filename "image.ff $0800
-@file-buf-pre $20
-@file-buf [ $3fe0 &pre-end $20 &end ]
+@file-buf-pre $20 @file-buf [ $3fe0 &pre-end $20 &end ]
 
 
 ( signed 8-bit values of quantization errors. divided by 2 )
